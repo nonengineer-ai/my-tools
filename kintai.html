@@ -914,7 +914,15 @@ function render() {
       else       {h2Days++;h2WorkMins+=res.work;h2OTMins+=res.ot;h2StdMins+=stdMins;}
     }
     if (rec.type === 'paid') { if(isFirst){h1Days++;h1Paid++;}else{h2Days++;h2Paid++;} }
-    var payDay = rec.type === 'paid' ? rate * stdH : (res.work > 0 ? rate * (res.work / 60) : 0);
+    var stdMinsDay = Math.round(stdH * 60);
+    var payDay = 0;
+    if (rec.type === 'paid') {
+      payDay = rate * stdH;
+    } else if (res.work > 0) {
+      var normalMins = Math.min(res.work, stdMinsDay);
+      var otMins     = Math.max(0, res.work - stdMinsDay);
+      payDay = rate * (normalMins / 60) + rate * 1.25 * (otMins / 60);
+    }
     totalPay += payDay;
     var startErr = rec.type === 'work' && rec.start && parseTime(rec.start) === null;
     var endErr   = rec.type === 'work' && rec.end   && parseTime(rec.end)   === null;
