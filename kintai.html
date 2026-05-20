@@ -749,17 +749,18 @@ function loadFromStorage(silent) {
 }
 
 function saveToStorage() {
+  allRecords[currentMonth] = records;
+  saveLocalCache(currentYear, currentMonth, records);
+  render();
+  updatePaidDisplay();
   if (saving) return;
   saving = true;
-  allRecords[currentMonth] = records;
-  // まずローカルキャッシュに即保存（体感速度アップ）
-  saveLocalCache(currentYear, currentMonth, records);
   fetch(GAS_URL, {
     method: 'POST',
     body: JSON.stringify({ action: 'save', year: currentYear, month: currentMonth, records: records })
   })
-  .then(function() { saving = false; showToast('保存しました'); updatePaidDisplay(); })
-  .catch(function() { saving = false; showToast('保存に失敗しました'); });
+  .then(function() { saving = false; showToast('保存しました ✓'); })
+  .catch(function() { saving = false; showToast('⚠ GAS保存に失敗しました'); });
 }
 
 function changeMonth(d) {
@@ -1188,8 +1189,8 @@ function savePopup() {
     rec.break = '' + getPopupBreakValue();
     rec.away = popupAway.filter(function(a) { return a.start || a.end; });
   }
-  saveToStorage();
   closePopup();
+  saveToStorage();
 }
 
 document.addEventListener('keydown', function(e) {
