@@ -663,10 +663,23 @@ function renderDashboard(){
   const pg=document.getElementById('page-dashboard');
 
   const mes=S.exps.filter(e=>e.date.startsWith(S.month));
-  const totalSp=mes.reduce((s,e)=>s+e.amt,0);
+  const expSp=mes.reduce((s,e)=>s+e.amt,0);
   const rakSp=mes.filter(e=>e.card==='r').reduce((s,e)=>s+e.amt,0);
   const amxSp=mes.filter(e=>e.card==='a').reduce((s,e)=>s+e.amt,0);
   const cshSp=mes.filter(e=>e.card==='c').reduce((s,e)=>s+e.amt,0);
+
+  // 固定引き落とし（ONのもの）を加算
+  const activeDeds=(S.deds||[]).filter(d=>d.on);
+  const dedTotal=activeDeds.reduce((s,d)=>s+d.amt,0);
+  const dedRak=activeDeds.filter(d=>d.type==='r').reduce((s,d)=>s+d.amt,0);
+  const dedAmx=activeDeds.filter(d=>d.type==='a').reduce((s,d)=>s+d.amt,0);
+  const dedBank=activeDeds.filter(d=>d.type==='bank').reduce((s,d)=>s+d.amt,0);
+
+  const totalSp=expSp+dedTotal;
+  const totalRak=rakSp+dedRak;
+  const totalAmx=amxSp+dedAmx;
+  const totalCsh=cshSp+dedBank;
+
   const usePct=S.income>0?Math.min(100,Math.round(totalSp/S.income*100)):0;
   const remain=S.income-totalSp;
 
@@ -738,13 +751,14 @@ function renderDashboard(){
         <div class="ringctr"><div class="rpct" style="color:${usePct>=90?'var(--red)':usePct>=70?'var(--amber)':'var(--accent)'}">${usePct}%</div><div class="rlbl">使用率</div></div>
       </div>
       <div style="flex:1;min-width:140px">
-        <div style="font-size:11px;font-weight:800;color:var(--text2);margin-bottom:10px">カード別 今月の支出</div>
+        <div style="font-size:11px;font-weight:800;color:var(--text2);margin-bottom:10px">カード別 今月の支出<span style="font-size:10px;font-weight:700;color:var(--text3)">（固定費込み）</span></div>
         <div style="display:flex;flex-direction:column;gap:8px">
-          <div style="display:flex;justify-content:space-between"><span style="font-size:12px;font-weight:800;color:var(--rakuten)">💳 楽天</span><span style="font-size:13px;font-weight:900;color:var(--rakuten)">${yen(rakSp)}</span></div>
-          <div style="display:flex;justify-content:space-between"><span style="font-size:12px;font-weight:800;color:var(--amex)">💳 AMEX</span><span style="font-size:13px;font-weight:900;color:var(--amex)">${yen(amxSp)}</span></div>
-          <div style="display:flex;justify-content:space-between"><span style="font-size:12px;font-weight:800;color:var(--text2)">💴 現金</span><span style="font-size:13px;font-weight:900">${yen(cshSp)}</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="font-size:12px;font-weight:800;color:var(--rakuten)">💳 楽天</span><span style="font-size:13px;font-weight:900;color:var(--rakuten)">${yen(totalRak)}</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="font-size:12px;font-weight:800;color:var(--amex)">💳 AMEX</span><span style="font-size:13px;font-weight:900;color:var(--amex)">${yen(totalAmx)}</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="font-size:12px;font-weight:800;color:var(--text2)">🏦 銀行・現金</span><span style="font-size:13px;font-weight:900">${yen(totalCsh)}</span></div>
         </div>
-        <div style="margin-top:10px;font-size:10px;color:var(--text3);font-weight:700">月末締→翌27日 / 翌7日締→翌26日払</div>
+        ${dedTotal>0?`<div style="margin-top:8px;font-size:10px;color:var(--text2);font-weight:700;background:var(--surface2);border-radius:6px;padding:5px 8px">🏦 固定引き落とし ${yen(dedTotal)} 含む</div>`:''}
+        <div style="margin-top:6px;font-size:10px;color:var(--text3);font-weight:700">月末締→翌27日 / 翌7日締→翌26日払</div>
       </div>
     </div>
     <div class="card"><div class="ctitle">🎯 項目別 予算バトル</div>${bars}</div>
@@ -804,8 +818,8 @@ function openExpModal(){
         <select id="E_cat" class="finp">${catOpts}</select></div>
       <div class="fg"><label class="flbl">支払い方法</label>
         <select id="E_card" class="finp">
+          <option value="a">💳 AMEX</option>
           <option value="r">💳 楽天カード</option>
-          <option value="a">💳 アメックス</option>
           <option value="c">💴 現金・その他</option>
         </select></div>
     </div>
