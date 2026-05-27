@@ -509,10 +509,10 @@ function defaultState(){
 let S;
 try{ S=JSON.parse(localStorage.getItem('kakeibo7')||'null')||defaultState(); }
 catch(e){ S=defaultState(); }
-function persist(syncCloud=false){
+function persist(){
   try{ localStorage.setItem('kakeibo7', JSON.stringify(S)); } catch(e) {}
-  // syncCloud=trueの時だけクラウド保存（支出追加・編集時のみ）
-  if(syncCloud && typeof cloudSave === 'function') cloudSave().catch(()=>{});
+  // 常にクラウドへも保存
+  if(typeof cloudSave === 'function') cloudSave().catch(()=>{});
 }
 
 // ─────────────────────────────────────────────
@@ -1620,7 +1620,7 @@ renderCurrent();
 const hasLocalData = S.exps.length > 0 || S.cats.some(c => c.manual !== null);
 if (hasLocalData) {
   // 即座に表示済み → バックグラウンドで同期（silent=true）
-  setTimeout(() => cloudLoad(true), 200);
+  setTimeout(() => cloudLoad(true), 3000);
 } else {
   // データなし（初回）→ クラウドから読込
   cloudLoad(false);
