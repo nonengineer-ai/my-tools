@@ -695,8 +695,10 @@ function renderDashboard(){
   const items=Object.entries(S.gotItems||{}).filter(([,v])=>v>0);
   const msgs=remain<0?['来月取り返そう💪']:usePct>=80?['予算を意識しよう💡']:['今日も記録してえらい！✨','コツコツが一番！','記録習慣ついてきた！'];
 
-  // アラート
+  // アラート（貯蓄・投資カテゴリは資産扱いのため除外）
+  const ALERT_EXCLUDE=['貯蓄・投資'];
   const alerts=S.cats.map(c=>{
+    if(ALERT_EXCLUDE.includes(c.name)) return '';
     const b=budget(c); const sp=spent(c.name);
     const p=b>0?Math.round(sp/b*100):0;
     return p>=90?`<div class="abanner">⚠️ ${c.e} ${c.name}の予算が${p}%に達しています${sp>b?'（超過！）':''}。</div>`:'';
