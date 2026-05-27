@@ -392,7 +392,13 @@ async function cloudSave() {
 // silent=false: 手動読込（必ず再描画・ローディング表示あり）
 async function cloudLoad(silent=false) {
   try {
-    if (!silent) showSyncStatus('loading');
+    if (!silent) {
+      // 手動読込の前に現在のデータを先にクラウドへ保存
+      showSyncStatus('saving');
+      await gasPost({ action: 'kakeiboSaveSettings', data: settingsFromState() });
+      await gasPost({ action: 'kakeiboSaveMonth', ym: S.month, data: monthDataFromState(S.month) });
+      showSyncStatus('loading');
+    }
     // 設定読込
     const sr = await gasGet({ action: 'kakeiboLoadSettings' });
     if (sr.status === 'ok' && sr.data) {
