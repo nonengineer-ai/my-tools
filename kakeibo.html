@@ -668,8 +668,16 @@ function renderDashboard(){
   const amxSp=mes.filter(e=>e.card==='a').reduce((s,e)=>s+e.amt,0);
   const cshSp=mes.filter(e=>e.card==='c').reduce((s,e)=>s+e.amt,0);
 
-  // 固定引き落とし（ONのもの）を加算
-  const activeDeds=(S.deds||[]).filter(d=>d.on);
+  // 固定引き落とし：ONかつ当月の引き落とし日が今日以前のものだけ加算
+  const _today=new Date();
+  const [_sy,_sm]=[_today.getFullYear(),_today.getMonth()+1];
+  const [_vy,_vm]=S.month.split('-').map(Number);
+  const activeDeds=(S.deds||[]).filter(d=>{
+    if(!d.on) return false;
+    if(_vy>_sy||(_vy===_sy&&_vm>_sm)) return false; // 未来月は0件
+    if(_vy<_sy||(_vy===_sy&&_vm<_sm)) return true;  // 過去月は全件
+    return d.day<=_today.getDate(); // 今月は引き落とし日が今日以前のみ
+  });
   const dedTotal=activeDeds.reduce((s,d)=>s+d.amt,0);
   const dedRak=activeDeds.filter(d=>d.type==='r').reduce((s,d)=>s+d.amt,0);
   const dedAmx=activeDeds.filter(d=>d.type==='a').reduce((s,d)=>s+d.amt,0);
