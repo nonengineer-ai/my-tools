@@ -708,16 +708,22 @@ function renderDashboard(){
 
   // 予算バー
   const bars=S.cats.map(c=>{
-    const b=budget(c); const sp=spent(c.name);
+    const b=budget(c);
+    const expOnly=spent(c.name);
+    // 紐付き固定引き落とし済み分を加算
+    const dedForCat=activeDeds.filter(d=>d.cat===c.name).reduce((s,d)=>s+d.amt,0);
+    const sp=expOnly+dedForCat;
     const p=b>0?Math.min(120,Math.round(sp/b*100)):0;
     const dp=Math.min(100,p);
     const bc=bcolor(p,c.col);
     const tag=p>=90?`<span class="tag tng">${p}%</span>`:p>=70?`<span class="tag twn">${p}%</span>`:`<span class="tag tok">${p}%</span>`;
+    const dedBadge=dedForCat>0?`<span style="font-size:10px;color:var(--text2);font-weight:700">（固定 ${yen(dedForCat)} 含む）</span>`:'';
     return `<div class="bitem">
       <div class="bhdr">
         <div class="bname"><span style="font-size:17px">${c.e}</span>${c.name}</div>
         <div class="brgt">${tag}<span class="bamt">${yen(sp)} / ${yen(b)}</span></div>
       </div>
+      ${dedBadge}
       <div class="barwrap"><div class="barfill" style="width:${dp}%;background:${bc}"></div><div class="barmid"></div></div>
     </div>`;
   }).join('');
@@ -1459,6 +1465,7 @@ function renderCycleTable(container){
 // ─────────────────────────────────────────────
 function openDedModal(d){
   const dayOpts=Array.from({length:31},(_,i)=>`<option value="${i+1}"${d&&d.day===i+1?' selected':''}>${i+1}日</option>`).join('');
+  const catOpts=`<option value="">（紐付けなし）</option>`+S.cats.map(c=>`<option value="${c.name}"${d&&d.cat===c.name?' selected':''}>${c.e} ${c.name}</option>`).join('');
   openModal(`<div class="mdl">
     <div class="mtitle">🏦 ${d?'固定引き落としを編集':'固定引き落としを追加'}</div>
     <div class="fg"><label class="flbl">名前</label>
@@ -1469,12 +1476,16 @@ function openDedModal(d){
       <div class="fg"><label class="flbl">種別</label>
         <select id="D_type" class="finp">
           <option value="bank"${d&&d.type==='bank'?' selected':''}>🏦 銀行引き落とし</option>
-          <option value="a"${d&&d.type==='a'?' selected':''}>💳 アメックス</option>
+          <option value="a"${d&&d.type==='a'?' selected':''}>💳 AMEX</option>
           <option value="r"${d&&d.type==='r'?' selected':''}>💳 楽天カード</option>
         </select></div>
     </div>
     <div class="fg"><label class="flbl">金額（円）</label>
       <input type="number" id="D_amt" class="finp" placeholder="0" value="${d?d.amt:''}"></div>
+    <div class="fg"><label class="flbl">予算カテゴリに紐付ける</label>
+      <select id="D_cat" class="finp">${catOpts}</select>
+      <div style="font-size:10px;color:var(--text2);font-weight:700;margin-top:4px">設定すると予算バトルの該当カテゴリに自動加算されます</div>
+    </div>
     <div class="fg"><label class="flbl">メモ（任意）</label>
       <input type="text" id="D_memo" class="finp" placeholder="例: 毎月固定" value="${d?d.memo:''}"></div>
     <div class="mfoot">
@@ -1489,14 +1500,15 @@ function openDedModal(d){
     const day=+document.getElementById('D_day').value;
     const type=document.getElementById('D_type').value;
     const amt=parseInt(document.getElementById('D_amt').value)||0;
+    const cat=document.getElementById('D_cat').value;
     const memo=document.getElementById('D_memo').value.trim();
     if(!name||amt<=0){toast('名前と金額を入力してください');return;}
     if(d){
       const idx=S.deds.findIndex(x=>x.id===d.id);
-      if(idx>=0) S.deds[idx]={...S.deds[idx],name,day,type,amt,memo};
+      if(idx>=0) S.deds[idx]={...S.deds[idx],name,day,type,amt,cat,memo};
     } else {
       if(!S.deds) S.deds=[];
-      S.deds.push({id:Date.now(),name,day,type,amt,memo,on:true});
+      S.deds.push({id:Date.now(),name,day,type,amt,cat,memo,on:true});
     }
     persist(); closeModal(); toast('固定引き落としを登録しました🏦'); renderPayments();
   };
