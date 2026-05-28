@@ -345,6 +345,7 @@ function settingsFromState() {
     records: S.records,
     gotItems: S.gotItems,
     theme:  S.theme,
+    updatedAt: Date.now(),
   };
 }
 
@@ -354,6 +355,7 @@ function monthDataFromState(ym) {
     manualPay: Object.fromEntries(
       Object.entries(S.manualPay || {}).filter(([k]) => k.startsWith(ym))
     ),
+    updatedAt: Date.now(),
   };
 }
 
@@ -387,57 +389,67 @@ async function cloudSave() {
   }
 }
 
-// クラウドから読込（設定＋当月データ）
-// silent=true: バックグラウンド同期（画面は差分がある時だけ更新）
-// silent=false: 手動読込（必ず再描画・ローディング表示あり）
+// クラウドから読込（タイムスタンプで新しい方を優先）
 async function cloudLoad(silent=false) {
   try {
-    if (!silent) {
-      // 手動読込の前に現在のデータを先にクラウドへ保存
-      showSyncStatus('saving');
-      await gasPost({ action: 'kakeiboSaveSettings', data: settingsFromState() });
-      await gasPost({ action: 'kakeiboSaveMonth', ym: S.month, data: monthDataFromState(S.month) });
-      showSyncStatus('loading');
-    }
-    // 設定読込
+    if (!silent) showSyncStatus('loading');
+
+    // 設定：ローカルとクラウドを比較して新しい方を採用
     const sr = await gasGet({ action: 'kakeiboLoadSettings' });
     if (sr.status === 'ok' && sr.data) {
-      const d = sr.data;
-      S.income   = d.income   ?? S.income;
-      S.cats     = d.cats     ?? S.cats;
-      S.deds     = d.deds     ?? S.deds;
-      S.assets   = d.assets   ?? S.assets;
-      S.coins    = d.coins    ?? S.coins;
-      S.records  = d.records  ?? S.records;
-      S.gotItems = d.gotItems ?? S.gotItems;
-      S.theme    = d.theme    ?? S.theme;
+      const cloud = sr.data;
+      const localTs = S.settingsUpdatedAt || 0;
+      const cloudTs = cloud.updatedAt || 0;
+      if (cloudTs > localTs) {
+        // クラウドが新しい → クラウドで上書き
+        S.income   = cloud.income   ?? S.income;
+        S.cats     = cloud.cats     ?? S.cats;
+        S.deds     = cloud.deds     ?? S.deds;
+        S.assets   = cloud.assets   ?? S.assets;
+        S.coins    = cloud.coins    ?? S.coins;
+        S.records  = cloud.records  ?? S.records;
+        S.gotItems = cloud.gotItems ?? S.gotItems;
+        S.theme    = cloud.theme    ?? S.theme;
+        S.settingsUpdatedAt = cloudTs;
+      } else if (localTs > cloudTs) {
+        // ローカルが新しい → クラウドへ保存
+        await gasPost({ action: 'kakeiboSaveSettings', data: settingsFromState() });
+      }
     }
-    // 当月データ読込
+
+    // 当月データ：ローカルとクラウドを比較して新しい方を採用
     const mr = await gasGet({ action: 'kakeiboLoadMonth', ym: S.month });
     if (mr.status === 'ok' && mr.data) {
-      const d = mr.data;
-      const before = JSON.stringify(S.exps.filter(e => e.date.startsWith(S.month)));
-      S.exps = [
-        ...S.exps.filter(e => !e.date.startsWith(S.month)),
-        ...(d.exps || []),
-      ];
-      Object.keys(S.manualPay || {}).forEach(k => { if(k.startsWith(S.month)) delete S.manualPay[k]; });
-      Object.assign(S.manualPay, d.manualPay || {});
-      // バックグラウンド時はデータが変わった時だけ再描画
-      const after = JSON.stringify(S.exps.filter(e => e.date.startsWith(S.month)));
-      if (!silent || before !== after) {
+      const cloud = mr.data;
+      const monthKey = 'monthUpdatedAt_' + S.month;
+      const localTs = S[monthKey] || 0;
+      const cloudTs = cloud.updatedAt || 0;
+      if (cloudTs > localTs) {
+        // クラウドが新しい → クラウドで上書き
+        const before = JSON.stringify(S.exps.filter(e => e.date.startsWith(S.month)));
+        S.exps = [
+          ...S.exps.filter(e => !e.date.startsWith(S.month)),
+          ...(cloud.exps || []),
+        ];
+        Object.keys(S.manualPay || {}).forEach(k => { if(k.startsWith(S.month)) delete S.manualPay[k]; });
+        Object.assign(S.manualPay, cloud.manualPay || {});
+        S[monthKey] = cloudTs;
+        const after = JSON.stringify(S.exps.filter(e => e.date.startsWith(S.month)));
+        if (!silent || before !== after) {
+          persist();
+          applyTheme(); setMonthLabel(); buildNav(); renderCurrent();
+        } else { persist(); }
+      } else if (localTs > cloudTs) {
+        // ローカルが新しい → クラウドへ保存
+        await gasPost({ action: 'kakeiboSaveMonth', ym: S.month, data: monthDataFromState(S.month) });
         persist();
-        applyTheme();
-        setMonthLabel();
-        buildNav();
-        renderCurrent();
       } else {
         persist();
       }
     } else {
       persist();
     }
-    if (!silent) showSyncStatus('loaded');
+    if (!silent) { showSyncStatus('loaded'); applyTheme(); setMonthLabel(); buildNav(); renderCurrent(); }
     else showSyncStatus('synced');
   } catch(e) {
     if (!silent) showSyncStatus('error');
@@ -445,20 +457,28 @@ async function cloudLoad(silent=false) {
   }
 }
 
-// 月を切り替えた時に当月データだけ追加読込
+// 月を切り替えた時に当月データだけ追加読込（タイムスタンプで新しい方を優先）
 async function cloudLoadMonth(ym) {
   try {
     showSyncStatus('loading');
     const mr = await gasGet({ action: 'kakeiboLoadMonth', ym });
     if (mr.status === 'ok' && mr.data) {
-      const d = mr.data;
-      S.exps = [
-        ...S.exps.filter(e => !e.date.startsWith(ym)),
-        ...(d.exps || []),
-      ];
-      Object.keys(S.manualPay || {}).forEach(k => { if(k.startsWith(ym)) delete S.manualPay[k]; });
-      Object.assign(S.manualPay, d.manualPay || {});
-      persist();
+      const cloud = mr.data;
+      const monthKey = 'monthUpdatedAt_' + ym;
+      const localTs = S[monthKey] || 0;
+      const cloudTs = cloud.updatedAt || 0;
+      if (cloudTs > localTs) {
+        S.exps = [
+          ...S.exps.filter(e => !e.date.startsWith(ym)),
+          ...(cloud.exps || []),
+        ];
+        Object.keys(S.manualPay || {}).forEach(k => { if(k.startsWith(ym)) delete S.manualPay[k]; });
+        Object.assign(S.manualPay, cloud.manualPay || {});
+        S[monthKey] = cloudTs;
+        persist();
+      } else if (localTs > cloudTs) {
+        await gasPost({ action: 'kakeiboSaveMonth', ym, data: monthDataFromState(ym) });
+      }
     }
     showSyncStatus('loaded');
   } catch(e) {
@@ -515,15 +535,25 @@ function defaultState(){
 let S;
 try{ S=JSON.parse(localStorage.getItem('kakeibo7')||'null')||defaultState(); }
 catch(e){ S=defaultState(); }
-// ── データ復元（一度だけ実行） ──
+// ── 起動時データ復元（ローカルより新しければ上書き） ──
 (function(){
-  const _restore = '{"month":"2026-05","income":396683,"coins":164,"records":30,"gotItems":{"star":1,"rocket":1,"gem":1},"cats":[{"name":"家賃","e":"🏠","pct":0,"col":"#8b5cf6","manual":51264},{"name":"食費","e":"🍚","pct":15,"col":"#10b981","manual":50000},{"name":"日用品","e":"🛒","pct":5,"col":"#6366f1","manual":20000},{"name":"交通費","e":"🚃","pct":5,"col":"#f59e0b","manual":10000},{"name":"通信費","e":"📱","pct":3,"col":"#ec4899","manual":8000},{"name":"趣味","e":"🎬","pct":8,"col":"#8b5cf6","manual":6000},{"name":"衣服・美容","e":"👗","pct":5,"col":"#06b6d4","manual":70000},{"name":"医療","e":"💊","pct":3,"col":"#f97316","manual":10000},{"name":"貯蓄・投資","e":"💰","pct":20,"col":"#84cc16","manual":50000},{"name":"PC本体代金","e":"💻","pct":0,"col":"#6366f1","manual":18600},{"name":"その他","e":"📦","pct":5,"col":"#9ca3af","manual":102819},{"name":"税金","e":"💸","pct":0,"col":"#10b981","manual":null}],"exps":[{"cat":"食費","amt":859,"date":"2026-05-10","memo":"","card":"a"},{"cat":"食費","amt":108,"date":"2026-05-10","memo":"","card":"c"},{"cat":"日用品","amt":220,"date":"2026-05-10","memo":"","card":"c"},{"cat":"衣服・美容","amt":13566,"date":"2026-05-09","memo":"","card":"a"},{"cat":"食費","amt":1517,"date":"2026-05-09","memo":"","card":"a"},{"cat":"食費","amt":637,"date":"2026-05-09","memo":"","card":"a"},{"cat":"食費","amt":860,"date":"2026-05-09","memo":"","card":"c"},{"cat":"衣服・美容","amt":15000,"date":"2026-05-09","memo":"","card":"r"},{"cat":"衣服・美容","amt":8721,"date":"2026-05-06","memo":"iHerb","card":"a"},{"cat":"食費","amt":1000,"date":"2026-05-05","memo":"スタバ","card":"r"},{"cat":"食費","amt":1320,"date":"2026-05-05","memo":"","card":"r"},{"cat":"食費","amt":2002,"date":"2026-05-05","memo":"","card":"r"},{"cat":"衣服・美容","amt":24200,"date":"2026-05-05","memo":"","card":"r"},{"cat":"交通費","amt":5000,"date":"2026-05-05","memo":"","card":"r"},{"cat":"日用品","amt":5767,"date":"2026-05-03","memo":"Amazon","card":"r"},{"cat":"食費","amt":2158,"date":"2026-05-03","memo":"","card":"r"},{"cat":"衣服・美容","amt":7150,"date":"2026-05-02","memo":"","card":"r"},{"cat":"衣服・美容","amt":8014,"date":"2026-05-02","memo":"","card":"r"},{"cat":"日用品","amt":399,"date":"2026-05-02","memo":"","card":"c"},{"cat":"食費","amt":1040,"date":"2026-05-02","memo":"","card":"r"},{"cat":"衣服・美容","amt":18700,"date":"2026-05-02","memo":"","card":"r"},{"cat":"趣味","amt":1000,"date":"2026-05-02","memo":"映画","card":"r"},{"cat":"衣服・美容","amt":15390,"date":"2026-05-01","memo":"","card":"r"},{"cat":"衣服・美容","amt":2580,"date":"2026-05-01","memo":"MUJI","card":"r"},{"cat":"食費","amt":1424,"date":"2026-05-01","memo":"","card":"r"},{"cat":"食費","amt":1870,"date":"2026-05-01","memo":"MUJI","card":"r"},{"cat":"日用品","amt":1790,"date":"2026-05-01","memo":"MUJI","card":"r"},{"cat":"衣服・美容","amt":3439,"date":"2026-05-01","memo":"Qoo10","card":"r"},{"cat":"その他","amt":22556,"date":"2026-05-15","memo":"スマートリング@マクアケ","card":"a"}],"manualPay":{"2026-05_amexThis":138126,"2026-05_rakThis":124262},"assets":{"nisa":550481,"ideco":2255,"futsu":5000,"teiki":0},"deds":[{"id":1778415224078,"name":"PC本体代金","day":27,"type":"bank","amt":18600,"memo":"","on":true},{"id":1778415246585,"name":"iDeCo","day":26,"type":"bank","amt":5000,"memo":"","on":true},{"id":1778851925279,"name":"家賃","day":27,"type":"bank","amt":51264,"memo":"","on":true}],"theme":"dark"}';
-  localStorage.setItem('kakeibo7', _restore);
-  S = JSON.parse(_restore);
+  try{
+    const _d = JSON.parse('{"month":"2026-05","income":396683,"coins":191,"records":49,"gotItems":{"star":1,"rocket":1,"gem":1},"cats":[{"name":"家賃","e":"🏠","pct":0,"col":"#8b5cf6","manual":51264},{"name":"食費","e":"🍚","pct":15,"col":"#10b981","manual":50000},{"name":"日用品","e":"🛒","pct":5,"col":"#6366f1","manual":20000},{"name":"交通費","e":"🚃","pct":5,"col":"#f59e0b","manual":10000},{"name":"通信費","e":"📱","pct":3,"col":"#ec4899","manual":8000},{"name":"趣味","e":"🎬","pct":8,"col":"#8b5cf6","manual":6000},{"name":"衣服・美容","e":"👗","pct":5,"col":"#06b6d4","manual":70000},{"name":"医療","e":"💊","pct":3,"col":"#f97316","manual":10000},{"name":"貯蓄・投資","e":"💰","pct":20,"col":"#84cc16","manual":50000},{"name":"PC本体代金","e":"💻","pct":0,"col":"#6366f1","manual":18600},{"name":"その他","e":"📦","pct":5,"col":"#9ca3af","manual":102819},{"name":"税金","e":"💸","pct":0,"col":"#10b981","manual":null}],"exps":[{"cat":"食費","amt":859,"date":"2026-05-10","memo":"","card":"a"},{"cat":"食費","amt":108,"date":"2026-05-10","memo":"","card":"c"},{"cat":"日用品","amt":220,"date":"2026-05-10","memo":"","card":"c"},{"cat":"衣服・美容","amt":13566,"date":"2026-05-09","memo":"","card":"a"},{"cat":"食費","amt":1517,"date":"2026-05-09","memo":"","card":"a"},{"cat":"食費","amt":637,"date":"2026-05-09","memo":"","card":"a"},{"cat":"食費","amt":860,"date":"2026-05-09","memo":"","card":"c"},{"cat":"衣服・美容","amt":15000,"date":"2026-05-09","memo":"","card":"r"},{"cat":"衣服・美容","amt":8721,"date":"2026-05-06","memo":"iHerb","card":"a"},{"cat":"食費","amt":1000,"date":"2026-05-05","memo":"スタバ","card":"r"},{"cat":"食費","amt":1320,"date":"2026-05-05","memo":"","card":"r"},{"cat":"食費","amt":2002,"date":"2026-05-05","memo":"","card":"r"},{"cat":"衣服・美容","amt":24200,"date":"2026-05-05","memo":"","card":"r"},{"cat":"交通費","amt":5000,"date":"2026-05-05","memo":"","card":"r"},{"cat":"日用品","amt":5767,"date":"2026-05-03","memo":"Amazon","card":"r"},{"cat":"食費","amt":2158,"date":"2026-05-03","memo":"","card":"r"},{"cat":"衣服・美容","amt":7150,"date":"2026-05-02","memo":"","card":"r"},{"cat":"衣服・美容","amt":8014,"date":"2026-05-02","memo":"","card":"r"},{"cat":"日用品","amt":399,"date":"2026-05-02","memo":"","card":"c"},{"cat":"食費","amt":1040,"date":"2026-05-02","memo":"","card":"r"},{"cat":"衣服・美容","amt":18700,"date":"2026-05-02","memo":"","card":"r"},{"cat":"趣味","amt":1000,"date":"2026-05-02","memo":"映画","card":"r"},{"cat":"衣服・美容","amt":15390,"date":"2026-05-01","memo":"","card":"r"},{"cat":"衣服・美容","amt":2580,"date":"2026-05-01","memo":"MUJI","card":"r"},{"cat":"食費","amt":1424,"date":"2026-05-01","memo":"","card":"r"},{"cat":"食費","amt":1870,"date":"2026-05-01","memo":"MUJI","card":"r"},{"cat":"日用品","amt":1790,"date":"2026-05-01","memo":"MUJI","card":"r"},{"cat":"衣服・美容","amt":3439,"date":"2026-05-01","memo":"Qoo10","card":"r"},{"cat":"その他","amt":22556,"date":"2026-05-15","memo":"スマートリング@マクアケ","card":"a"},{"cat":"食費","amt":1490,"date":"2026-05-16","memo":"","card":"c"},{"cat":"食費","amt":2894,"date":"2026-05-16","memo":"","card":"a"},{"cat":"日用品","amt":332,"date":"2026-05-16","memo":"","card":"a"},{"cat":"日用品","amt":621,"date":"2026-05-17","memo":"","card":"a"},{"cat":"日用品","amt":100,"date":"2026-05-19","memo":"","card":"c"},{"cat":"日用品","amt":418,"date":"2026-05-19","memo":"","card":"r"},{"cat":"日用品","amt":435,"date":"2026-05-19","memo":"","card":"a"},{"cat":"食費","amt":700,"date":"2026-05-23","memo":"","card":"a"},{"cat":"食費","amt":1184,"date":"2026-05-23","memo":"","card":"a"},{"cat":"食費","amt":556,"date":"2026-05-23","memo":"","card":"a"},{"cat":"食費","amt":3102,"date":"2026-05-23","memo":"","card":"a"},{"cat":"衣服・美容","amt":4970,"date":"2026-05-23","memo":"","card":"a"},{"cat":"日用品","amt":1155,"date":"2026-05-23","memo":"","card":"a"},{"cat":"衣服・美容","amt":3359,"date":"2026-05-25","memo":"リカバリーウェア@マクアケ","card":"a"},{"cat":"食費","amt":183,"date":"2026-05-25","memo":"","card":"a"},{"cat":"食費","amt":1233,"date":"2026-05-25","memo":"","card":"a"},{"cat":"食費","amt":861,"date":"2026-05-25","memo":"","card":"a"},{"cat":"医療","amt":570,"date":"2026-05-25","memo":"","card":"c"},{"cat":"医療","amt":950,"date":"2026-05-25","memo":"","card":"a"}],"manualPay":{"2026-05_amexThis":138126,"2026-05_rakThis":124262},"assets":{"nisa":550481,"ideco":2255,"futsu":5000,"teiki":0},"deds":[{"id":1778415224078,"name":"PC本体代金","day":27,"type":"bank","amt":18600,"memo":"","on":true},{"id":1778415246585,"name":"iDeCo","day":26,"type":"bank","amt":5000,"memo":"","on":true},{"id":1778851925279,"name":"家賃","day":27,"type":"bank","amt":51264,"memo":"","on":true}],"theme":"dark","settingsUpdatedAt":1748390400000,"monthUpdatedAt_2026-05":1748390400000}');
+    const _local = JSON.parse(localStorage.getItem('kakeibo7')||'{}');
+    const _localTs = _local['monthUpdatedAt_2026-05'] || 0;
+    if(_d['monthUpdatedAt_2026-05'] >= _localTs){
+      localStorage.setItem('kakeibo7', JSON.stringify(_d));
+      S = _d;
+    }
+  }catch(e){}
 })();
 function persist(){
+  // 保存時刻を記録（競合防止）
+  const now = Date.now();
+  S.settingsUpdatedAt = now;
+  S['monthUpdatedAt_' + S.month] = now;
   try{ localStorage.setItem('kakeibo7', JSON.stringify(S)); } catch(e) {}
-  // 常にクラウドへも保存
+  // クラウドへも保存
   if(typeof cloudSave === 'function') cloudSave().catch(()=>{});
 }
 
