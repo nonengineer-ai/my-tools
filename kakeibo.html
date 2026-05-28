@@ -492,7 +492,7 @@ function showSyncStatus(status) {
 // GAS ウォームアップ（コールドスタート対策）
 // アプリ表示直後に軽量pingを送りGASを起こしておく
 // ─────────────────────────────────────────────
-function gasWarmup() {
+function gasWarmup() { cloudSave();
   fetch(GAS_URL + '?action=ping').catch(() => {});
 }
 
