@@ -7,7 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
 <style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
 /* ════════════════════════════
    赤×白 テーマ
 ════════════════════════════ */
@@ -30,6 +31,7 @@
   --earth:     #b85a38;
   --gray-bg:   #fcfafa;
 }
+
 body {
   font-family: 'Noto Sans JP', sans-serif;
   background-color: var(--bg2);
@@ -42,6 +44,7 @@ body {
   overflow-x: hidden;
   -webkit-tap-highlight-color: transparent;
 }
+
 .app-container {
   width: 100%;
   max-width: 1040px;
@@ -49,25 +52,38 @@ body {
   grid-template-columns: 1fr;
   gap: 20px;
 }
-@media (min-width: 800px) {
+@media(min-width: 800px) {
   .app-container { grid-template-columns: 1.4fr 1fr; }
 }
+
+/* カード基盤 */
 .card {
   background: var(--bg-card);
   border-radius: var(--r-lg);
   padding: 24px;
-  box-shadow: 0 4px 24px rgba(180,40,40,0.03), 0 1px 2px rgba(180,40,40,0.02);
+  box-shadow: 
+    0 4px 24px rgba(180,40,40,0.03),
+    0 1px 2px rgba(180,40,40,0.02);
   border: 1px solid var(--border);
   position: relative;
 }
+
+/* ヘッダー */
 .header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
-.header-left { display: flex; align-items: center; gap: 8px; }
-.header-title { font-size: 20px; font-weight: 900; color: var(--red); letter-spacing: -0.5px; }
+.header-left { display: flex; align-items: center; gap: 10px; }
+.header-title {
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--red);
+  letter-spacing: -0.5px;
+}
+
+/* 表示切替セグメントコントロール */
 .view-switch {
   display: flex;
   background: var(--bg3);
@@ -83,19 +99,26 @@ body {
   color: var(--text2);
   cursor: pointer;
   border-radius: 99px;
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .view-btn.active {
   background: var(--red);
-  color: #fff;
+  color: #ffffff;
 }
+
+/* ナビゲーションバー */
 .nav-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 20px;
 }
-.nav-center { font-size: 17px; font-weight: 700; color: var(--text); }
+.nav-center {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.2px;
+}
 .btn-icon {
   width: 36px;
   height: 36px;
@@ -103,7 +126,7 @@ body {
   border: 1px solid var(--border2);
   background: var(--bg);
   color: var(--text);
-  font-size: 16px;
+  font-size: 14px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -111,6 +134,10 @@ body {
   transition: all 0.15s ease;
 }
 .btn-icon:active { background: var(--bg3); transform: scale(0.95); }
+
+/* ════════════════════════════
+   月曜始まりカレンダー表示
+════════════════════════════ */
 .week-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
@@ -133,7 +160,7 @@ body {
   flex-direction: column;
   justify-content: space-between;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
 }
 .day-cell:active { transform: scale(0.96); }
@@ -141,23 +168,61 @@ body {
   background: var(--red3);
   border-color: var(--red2);
 }
-.day-cell.other-month { opacity: 0.35; }
-.day-num { font-size: 13px; font-weight: 900; color: var(--text); }
+.day-cell.other-month {
+  opacity: 0.35;
+}
+.day-num {
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--text);
+}
 .day-cell.sun .day-num { color: #d93838; }
 .day-cell.sat .day-num { color: #386cd9; }
-.day-status { font-size: 9px; font-weight: 700; text-align: center; margin-top: auto; }
+
+/* セル内ステータス＆時間 */
+.day-status {
+  font-size: 9px;
+  font-weight: 700;
+  text-align: center;
+  margin-top: auto;
+}
 .status-work { color: var(--red); }
 .status-paid { color: var(--earth); }
 .status-off { color: var(--text3); }
-.day-hours { font-size: 10px; font-weight: 700; text-align: center; color: var(--text2); margin-top: 1px; }
+
+.day-hours {
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--text2);
+  margin-top: 1px;
+}
 
 /* ════════════════════════════
-   詳細カード & リスト
+   右側：詳細カード表示
 ════════════════════════════ */
-.day-view-card { display: flex; flex-direction: column; height: 100%; }
-.dv-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-.dv-date { font-size: 18px; font-weight: 900; color: var(--text); }
-.dv-weekday { font-size: 12px; font-weight: 700; color: var(--text2); margin-top: 2px; }
+.day-view-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.dv-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+.dv-date {
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--text);
+}
+.dv-weekday {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text2);
+  margin-top: 2px;
+}
 .btn-edit {
   border: none;
   background: var(--red3);
@@ -167,18 +232,61 @@ body {
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
+  transition: all 0.15s;
 }
-.dv-label { font-size: 11px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
-.dv-block { background: var(--gray-bg); border-radius: var(--r); padding: 12px 16px; margin-bottom: 14px; border: 1px solid var(--border); }
-.dv-block-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+.btn-edit:active { transform: scale(0.95); opacity: 0.8; }
+
+.dv-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+.dv-block {
+  background: var(--gray-bg);
+  border-radius: var(--r);
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+}
+.dv-block-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
 .dv-block-grid .dv-block { margin-bottom: 0; }
-.dv-val { font-size: 15px; font-weight: 700; color: var(--text); }
-.away-row { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; color: var(--text2); padding: 4px 0; }
+.dv-val {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.away-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text2);
+  padding: 4px 0;
+}
 
 /* ════════════════════════════
    リスト表示ビュー
 ════════════════════════════ */
-.list-wrapper { display: flex; flex-direction: column; gap: 8px; max-height: 480px; overflow-y: auto; padding-right: 4px; }
+.list-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 480px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+/* スクロールバー装飾 */
+.list-wrapper::-webkit-scrollbar { width: 4px; }
+.list-wrapper::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 99px; }
+
 .list-row {
   display: grid;
   grid-template-columns: 70px 65px 1fr 70px;
@@ -188,59 +296,143 @@ body {
   padding: 10px 14px;
   border-radius: var(--r);
   cursor: pointer;
+  transition: all 0.15s ease;
 }
-.list-row.active { background: var(--red3); border-color: var(--red2); }
+.list-row.active {
+  background: var(--red3);
+  border-color: var(--red2);
+}
 .list-date { font-size: 13px; font-weight: 900; }
 .list-type { font-size: 11px; font-weight: 700; }
 .list-time { font-size: 13px; font-weight: 700; color: var(--text); }
 .list-hours { font-size: 13px; font-weight: 900; text-align: right; color: var(--red); }
 
+.summary-box {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--red3);
+  border: 1px solid var(--border2);
+  padding: 12px 16px;
+  border-radius: var(--r);
+  margin-bottom: 16px;
+}
+.summary-title { font-size: 13px; font-weight: 700; color: var(--red); }
+.summary-val { font-size: 18px; font-weight: 900; color: var(--red); }
+
 /* ════════════════════════════
-   ポップアップ（モーダル）
+   設定ビューパネル
+════════════════════════════ */
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ════════════════════════════
+   編集ポップアップ（モーダル）
 ════════════════════════════ */
 .pop-overlay {
-  position: fixed; top:0; left:0; width:100%; height:100%;
-  background: rgba(26,10,10,0.3); backdrop-filter: blur(4px);
-  display: none; align-items: center; justify-content: center; z-index: 1000; padding: 12px;
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(26,10,10,0.25);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 12px;
 }
 .pop-box {
-  background: var(--bg-card); width: 100%; max-width: 440px;
-  border-radius: var(--r-xl); padding: 24px;
-  box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+  background: var(--bg-card);
+  width: 100%;
+  max-width: 440px;
+  border-radius: var(--r-xl);
+  padding: 24px;
+  box-shadow: 0 20px 40px rgba(26,10,10,0.08);
   border: 1px solid var(--border2);
   animation: popUp 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-@keyframes popUp { from { transform: scale(0.9) translateY(10px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
-.pop-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+@keyframes popUp {
+  from { transform: scale(0.95) translateY(8px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
+.pop-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
 .pop-title { font-size: 18px; font-weight: 900; }
-.pop-close { border:none; background:transparent; font-size:20px; cursor:pointer; color:var(--text3); }
-.seg-control { display: flex; background: var(--bg3); padding: 4px; border-radius: var(--r); margin-bottom: 20px; }
+.pop-close {
+  border: none; background: transparent; font-size: 20px; cursor: pointer; color: var(--text3);
+}
+
+/* モーダル内セグメント */
+.seg-control {
+  display: flex;
+  background: var(--bg3);
+  padding: 4px;
+  border-radius: var(--r);
+  margin-bottom: 20px;
+}
 .seg-btn {
   flex: 1; border: none; background: transparent; padding: 8px;
-  font-size: 13px; font-weight: 700; color: var(--text2); cursor: pointer; border-radius: calc(var(--r) - 2px);
+  font-size: 13px; font-weight: 700; color: var(--text2); cursor: pointer;
+  border-radius: calc(var(--r) - 2px);
+  transition: all 0.15s ease;
 }
-.seg-btn.active { background: var(--bg-card); color: var(--text); box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+.seg-btn.active {
+  background: var(--bg-card);
+  color: var(--text);
+  box-shadow: 0 2px 8px rgba(180,40,40,0.04);
+}
+
+/* フォーム要素 */
 .form-group { margin-bottom: 16px; }
 .form-label { font-size: 12px; font-weight: 700; color: var(--text2); margin-bottom: 6px; display: block; }
 .input-text {
-  width: 100%; border: 1px solid var(--border2); background: var(--gray-bg);
-  padding: 10px 14px; border-radius: var(--r); font-size: 14px; font-weight: 500; font-family: inherit;
-  color: var(--text); outline: none; transition: border 0.15s;
+  width: 100%;
+  border: 1px solid var(--border2);
+  background: var(--gray-bg);
+  padding: 10px 14px;
+  border-radius: var(--r);
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text);
+  outline: none;
+  transition: all 0.15s ease;
 }
-.input-text:focus { border-color: var(--red2); background: var(--bg-card); }
+.input-text:focus {
+  border-color: var(--red2);
+  background: var(--bg-card);
+}
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.away-item { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+
+/* 中抜け要素リスト */
+.away-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
 .btn-del {
   border: none; background: var(--bg3); color: var(--text2);
   width: 32px; height: 32px; border-radius: 99px; cursor: pointer; font-size: 12px;
 }
 .btn-add-away {
-  border: 1px dashed var(--red2); background: var(--red3); color: var(--red);
-  width: 100%; padding: 8px; border-radius: var(--r); font-size: 12px; font-weight: 700; cursor: pointer;
+  border: 1px dashed var(--red2);
+  background: var(--red3);
+  color: var(--red);
+  width: 100%; padding: 8px; border-radius: var(--r);
+  font-size: 12px; font-weight: 700; cursor: pointer;
 }
+
+/* フッターボタン */
 .pop-footer { display: flex; gap: 12px; margin-top: 24px; }
 .btn-main {
-  flex: 1; border: none; background: var(--red); color: #fff;
+  flex: 1; border: none; background: var(--red); color: #ffffff;
   padding: 12px; border-radius: var(--r); font-size: 14px; font-weight: 700; cursor: pointer; text-align: center;
 }
 .btn-sub {
@@ -249,20 +441,15 @@ body {
 }
 
 /* ════════════════════════════
-   設定・トースト・その他
+   共通システムコンポーネント
 ════════════════════════════ */
-.settings-panel { display: none; flex-direction: column; gap: 14px; animation: popUp 0.2s; }
-.settings-panel.active { display: flex; }
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(40px);
-  background: rgba(26,10,10,0.9); color: #fff; padding: 10px 20px; border-radius: 99px;
+  background: rgba(26,10,10,0.9); color: #ffffff; padding: 10px 20px; border-radius: 99px;
   font-size: 13px; font-weight: 700; z-index: 2000; opacity: 0; pointer-events: none;
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
-.summary-box { display: flex; justify-content: space-between; align-items: center; background: var(--red3); border: 1px solid var(--border2); padding: 12px 16px; border-radius: var(--r); margin-bottom: 16px; }
-.summary-title { font-size: 13px; font-weight: 700; color: var(--red); }
-.summary-val { font-size: 18px; font-weight: 900; color: var(--red); }
 </style>
 </head>
 <body>
@@ -271,7 +458,7 @@ body {
   <div class="card">
     <div class="header">
       <div class="header-left">
-        <span style="font-size:22px;">⏱️</span>
+        <span style="font-size: 22px;">⏱️</span>
         <h1 class="header-title">Time Tracker</h1>
       </div>
       <div class="view-switch">
@@ -287,12 +474,10 @@ body {
       <button class="btn-icon" onclick="moveMonth(1)">▶</button>
     </div>
 
-    <div id="viewContainer">
-      </div>
+    <div id="viewContainer"></div>
   </div>
 
-  <div class="card" id="dayViewCard">
-    </div>
+  <div class="card" id="dayViewCard"></div>
 </div>
 
 <div class="pop-overlay" id="popupOverlay">
@@ -320,7 +505,7 @@ body {
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label">休憩時間 (自動/手動分)</label>
+        <label class="form-label">休憩時間 (分)</label>
         <input type="text" class="input-text" id="popupBreak" placeholder="60">
       </div>
       <div class="form-group">
@@ -332,7 +517,7 @@ body {
 
     <div class="form-group">
       <label class="form-label">メモ</label>
-      <input type="text" class="input-text" id="popupMemo" placeholder="タスク内容など">
+      <input type="text" class="input-text" id="popupMemo" placeholder="備考・タスク内容など">
     </div>
 
     <div class="pop-footer">
@@ -345,26 +530,26 @@ body {
 <div class="toast" id="toast"></div>
 
 <script>
-// ════════════════════════════
-// ロジック＆状態管理
-// ════════════════════════════
 var GAS_URL = ""; 
-var currentView = "week"; 
-var currentDate = new Date(2026, 4, 30); // 2026年5月30日
-var selectedDayStr = "2026-05-30";
+var currentView = "week"; // week, list, set
+var currentDate = new Date(2026, 4, 30); // 2026年5月30日を基準点に
+var selectedDayStr = "2026-05-30"; // ⚠️【バグ修正】初期起動時に今日の日付文字列を最初からセット
 var records = {}; 
 var settings = { baseBreak: "60" };
 
 function showToast(msg) {
   var t = document.getElementById('toast');
-  t.innerText = msg; t.classList.add('show');
+  t.innerText = msg;
+  t.classList.add('show');
   setTimeout(function(){ t.classList.remove('show'); }, 2500);
 }
 
 window.onload = function() {
   loadLocalStorage();
+  updateCalendarTitle();
   switchView('week');
-  selectDay(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
+  // ⚠️【バグ修正】初期ロード時に今日の日付（5月30日）を自動選択して右側の詳細とeditを同期
+  selectDay(2026, 4, 30);
 };
 
 function loadLocalStorage() {
@@ -380,58 +565,64 @@ function saveToStorage() {
   } catch(e){}
 }
 
-function switchView(v) {
-  currentView = v;
-  document.getElementById('btnViewWeek').classList.toggle('active', v==='week');
-  document.getElementById('btnViewList').classList.toggle('active', v==='list');
-  document.getElementById('btnViewSet').classList.toggle('active', v==='set');
-  document.getElementById('calendarNav').style.display = (v==='week')?'flex':'none';
+function switchView(viewName) {
+  currentView = viewName;
+  document.getElementById('btnViewWeek').classList.toggle('active', viewName==='week');
+  document.getElementById('btnViewList').classList.toggle('active', viewName==='list');
+  document.getElementById('btnViewSet').classList.toggle('active', viewName==='set');
+  document.getElementById('calendarNav').style.display = (viewName==='week') ? 'flex' : 'none';
   renderMain();
 }
 
 function moveMonth(dir) {
   currentDate.setMonth(currentDate.getMonth() + dir);
-  document.getElementById('calendarTitle').innerText = currentDate.getFullYear() + '年 ' + String(currentDate.getMonth()+1).padStart(2,'0') + '月';
+  updateCalendarTitle();
   renderMain();
+}
+function updateCalendarTitle() {
+  var y = currentDate.getFullYear();
+  var m = String(currentDate.getMonth() + 1).padStart(2, '0');
+  document.getElementById('calendarTitle').innerText = y + '年 ' + m + '月';
 }
 
 function renderMain() {
   var container = document.getElementById('viewContainer');
-  if (currentView === 'week') {
-    renderWeekView(container);
-  } else if (currentView === 'list') {
-    renderListView(container);
-  } else {
-    renderSettingsView(container);
-  }
+  if (currentView === 'week') { renderWeekView(container); }
+  else if (currentView === 'list') { renderListView(container); }
+  else if (currentView === 'set') { renderSettingsView(container); }
 }
 
+/* 時間計算系ユーティリティ */
 function parseTime(str) {
   if(!str) return null;
-  str = str.replace(/:/g,'');
-  if(str.length===3) str = '0'+str;
-  if(str.length!==4) return null;
-  var h = parseInt(str.substring(0,2),10);
-  var m = parseInt(str.substring(2,4),10);
-  if(h>=0&&h<24&&m>=0&&m<60) return h*60+m;
+  str = str.replace(/:/g, '');
+  if(str.length === 3) str = '0' + str;
+  if(str.length !== 4) return null;
+  var h = parseInt(str.substring(0,2), 10);
+  var m = parseInt(str.substring(2,4), 10);
+  if(h >= 0 && h < 24 && m >= 0 && m < 60) return h * 60 + m;
   return null;
 }
 function formatMins(mins) {
-  var h = Math.floor(mins/60); var m = mins%60;
+  var h = Math.floor(mins / 60); var m = mins % 60;
   return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+}
+function getPopupBreakValue() {
+  var v = document.getElementById('popupBreak').value.trim();
+  return v === "" ? (settings.baseBreak || "60") : v;
 }
 
 function calcDayHours(rec) {
-  if(!rec || rec.type!=='work' || !rec.start || !rec.end) return 0;
+  if (!rec || rec.type !== 'work' || !rec.start || !rec.end) return 0;
   var t1 = parseTime(rec.start); var t2 = parseTime(rec.end);
-  if(t1===null || t2===null || t2<=t1) return 0;
+  if (t1 === null || t2 === null || t2 <= t1) return 0;
   var total = t2 - t1;
-  var brk = parseInt(rec.break || settings.baseBreak || '0', 10);
-  if(!isNaN(brk)) total -= brk;
-  if(rec.away && rec.away.length) {
+  var brk = parseInt(rec.break, 10); if (isNaN(brk)) brk = 0;
+  total -= brk;
+  if (rec.away && rec.away.length) {
     rec.away.forEach(function(a){
       var s = parseTime(a.start); var e = parseTime(a.end);
-      if(s!==null && e!==null && e>s) total -= (e - s);
+      if(s !== null && e !== null && e > s) total -= (e - s);
     });
   }
   return total > 0 ? total : 0;
@@ -439,49 +630,55 @@ function calcDayHours(rec) {
 
 function selectDay(y, m, d) {
   selectedDayStr = y + '-' + String(m+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+  
   var cells = document.querySelectorAll('.day-cell');
   cells.forEach(function(c){ c.classList.remove('active'); });
-  var activeCell = document.querySelector('.day-cell[data-date="'+selectedDayStr+'"]');
-  if(activeCell) activeCell.classList.add('active');
-  
+  var targetCell = document.querySelector('.day-cell[data-date="'+selectedDayStr+'"]');
+  if(targetCell) targetCell.classList.add('active');
+
   var rows = document.querySelectorAll('.list-row');
   rows.forEach(function(r){ r.classList.remove('active'); });
-  var activeRow = document.querySelector('.list-row[data-date="'+selectedDayStr+'"]');
-  if(activeRow) activeRow.classList.add('active');
+  var targetRow = document.querySelector('.list-row[data-date="'+selectedDayStr+'"]');
+  if(targetRow) targetRow.classList.add('active');
 
   renderDayView(y, m, d);
 }
 
+/* ════════════════════════════
+   ビュー描画関数
+════════════════════════════ */
 function renderWeekView(container) {
   var year = currentDate.getFullYear(); var month = currentDate.getMonth();
   var firstDay = new Date(year, month, 1);
   var startDiff = firstDay.getDay() - 1; if(startDiff < 0) startDiff = 6;
   var startDate = new Date(year, month, 1 - startDiff);
-  
+
   var html = '<div class="week-grid">';
-  var labels = ['月','火','水','木','金','土','日'];
-  labels.forEach(function(l){ html += '<div class="weekday-label">'+l+'</div>'; });
-  
-  for(var i=0; i<42; i++) {
+  var wdayLabels = ['月','火','水','木','金','土','日'];
+  wdayLabels.forEach(function(l){ html += '<div class="weekday-label">'+l+'</div>'; });
+
+  for (var i = 0; i < 42; i++) {
     var d = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + i);
-    var k = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-    var isOther = d.getMonth() !== month;
-    var cls = 'day-cell' + (isOther?' other-month':'');
-    if(d.getDay()===0) cls+=' sun'; if(d.getDay()===6) cls+=' sat';
-    if(k === selectedDayStr) cls+=' active';
+    var key = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    var isOtherMonth = d.getMonth() !== month;
     
-    var rec = records[k]; var statusHtml = ''; var hoursHtml = '';
+    var cellClass = 'day-cell' + (isOtherMonth ? ' other-month' : '');
+    if(d.getDay() === 0) cellClass += ' sun';
+    if(d.getDay() === 6) cellClass += ' sat';
+    if(key === selectedDayStr) cellClass += ' active';
+
+    var rec = records[key]; var statusHtml = ''; var hoursHtml = '';
     if(rec) {
-      if(rec.type==='work') {
+      if(rec.type === 'work') {
         statusHtml = '<div class="day-status status-work">勤務</div>';
-        var mins = calcDayHours(rec); if(mins>0) hoursHtml = '<div class="day-hours">'+(mins/60).toFixed(1)+'h</div>';
-      } else if(rec.type==='paid') {
+        var mins = calcDayHours(rec); if(mins > 0) hoursHtml = '<div class="day-hours">'+(mins/60).toFixed(1)+'h</div>';
+      } else if(rec.type === 'paid') {
         statusHtml = '<div class="day-status status-paid">有給</div>';
       } else {
         statusHtml = '<div class="day-status status-off">休日</div>';
       }
     }
-    html += '<div class="'+cls+'" data-date="'+k+'" onclick="selectDay('+d.getFullYear()+','+d.getMonth()+','+d.getDate()+')">' +
+    html += '<div class="'+cellClass+'" data-date="'+key+'" onclick="selectDay('+d.getFullYear()+','+d.getMonth()+','+d.getDate()+')">' +
             '<div class="day-num">'+d.getDate()+'</div>' + statusHtml + hoursHtml + '</div>';
   }
   html += '</div>';
@@ -490,102 +687,99 @@ function renderWeekView(container) {
 
 function renderListView(container) {
   var year = currentDate.getFullYear(); var month = currentDate.getMonth();
-  var daysInMonth = new Date(year, month+1, 0).getDate();
-  var totalMins = 0; var html = '<div class="list-wrapper">';
-  
-  for(var d=1; d<=daysInMonth; d++) {
-    var k = year + '-' + String(month+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
-    var rec = records[k];
-    var typeText = '-', timeText = '-', hoursText = '-', cls = 'list-row';
-    if(k === selectedDayStr) cls += ' active';
-    
-    if(rec) {
-      if(rec.type==='work') {
-        typeText = '勤務'; timeText = (rec.start||'--:--')+'~'+(rec.end||'--:--');
-        var mins = calcDayHours(rec); totalMins += mins;
-        if(mins>0) hoursText = (mins/60).toFixed(1)+'h';
-      } else if(rec.type==='paid') { typeText = '有給'; }
+  var totalDays = new Date(year, month + 1, 0).getDate();
+  var sumMins = 0;
+  var html = '<div class="list-wrapper">';
+
+  for (var d = 1; d <= totalDays; d++) {
+    var key = year + '-' + String(month+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+    var rec = records[key];
+    var typeText = '-', timeText = '-', hoursText = '-', rowClass = 'list-row';
+    if (key === selectedDayStr) rowClass += ' active';
+
+    if (rec) {
+      if (rec.type === 'work') {
+        typeText = '勤務'; timeText = (rec.start || '--:--') + ' ~ ' + (rec.end || '--:--');
+        var dm = calcDayHours(rec); sumMins += dm;
+        if(dm > 0) hoursText = (dm/60).toFixed(1) + 'h';
+      } else if (rec.type === 'paid') { typeText = '有給'; } 
       else { typeText = '休日'; }
     }
-    var dt = new Date(year, month, d);
-    var dayLabels = ['日','月','火','水','木','金','土'];
-    html += '<div class="'+cls+'" data-date="'+k+'" onclick="selectDay('+year+','+month+','+d+')">' +
-            '<div class="list-date">'+(month+1)+'/'+d+' <span style="font-size:11px;color:var(--text2)">('+dayLabels[dt.getDay()]+')</span></div>' +
+    var currentDt = new Date(year, month, d);
+    var dayLabel = ['日','月','火','水','木','金','土'][currentDt.getDay()];
+    html += '<div class="'+rowClass+'" data-date="'+key+'" onclick="selectDay('+year+','+month+','+d+')">' +
+            '<div class="list-date">'+(month+1)+'/'+d+' <span style="font-size:11px;color:var(--text2)">('+dayLabel+')</span></div>' +
             '<div class="list-type">'+typeText+'</div>' +
             '<div class="list-time">'+timeText+'</div>' +
             '<div class="list-hours">'+hoursText+'</div>' + '</div>';
   }
   html += '</div>';
-  var summary = '<div class="summary-box"><div class="summary-title">当月合計労働時間</div><div class="summary-val">'+(totalMins/60).toFixed(1)+' 時間</div></div>';
-  container.innerHTML = summary + html;
+  var sumHtml = '<div class="summary-box"><div class="summary-title">当月合計労働時間</div><div class="summary-val">'+(sumMins/60).toFixed(1)+' 時間</div></div>';
+  container.innerHTML = sumHtml + html;
 }
 
 function renderSettingsView(container) {
-  var html = '<div class="settings-panel active">' +
-             '<div class="form-group"><label class="form-label">デフォルト休憩時間 (分)</label>' +
-             '<input type="text" class="input-text" id="setBreak" value="'+(settings.baseBreak||'60')+'" onchange="updateSet(\'baseBreak\',this.value)"></div>' +
-             '<div class="form-group"><label class="form-label">Google Apps Script (GAS) 接続URL</label>' +
-             '<input type="text" class="input-text" id="setGas" value="'+GAS_URL+'" placeholder="https://script.google.com/..." onchange="GAS_URL=this.value.trim()"></div>' +
-             '<button class="btn-main" style="margin-top:10px;" onclick="syncWithGas()">☁️ GASと同期 (バックアップ/復元)</button></div>';
-  container.innerHTML = html;
+  container.innerHTML = '<div class="settings-panel">' +
+    '<div class="form-group"><label class="form-label">デフォルト休憩時間 (分)</label>' +
+    '<input type="text" class="input-text" id="setBreak" value="'+(settings.baseBreak||'60')+'" onchange="settings.baseBreak=this.value.trim();saveToStorage();"></div>' +
+    '<div class="form-group"><label class="form-label">Google Apps Script (GAS) 接続URL</label>' +
+    '<input type="text" class="input-text" id="setGasUrl" value="'+GAS_URL+'" placeholder="https://script.google.com/macros/s/.../exec" onchange="GAS_URL=this.value.trim();"></div>' +
+    '<button class="btn-main" style="margin-top:8px;" onclick="syncWithGas()">☁️ GASと同期する (バックアップ/復元)</button></div>';
 }
-function updateSet(field, val) { settings[field] = val.trim(); saveToStorage(); }
 
 function renderDayView(y, m, d) {
-  var k = y + '-' + String(m+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
-  var rec = records[k];
-  var dayLabels = ['日','月','火','水','木','金','土'];
-  var dt = new Date(y, m, d);
+  var key = y + '-' + String(m+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+  var rec = records[key];
+  var dayLabel = ['日','月','火','水','木','金','土'][new Date(y, m, d).getDay()];
   
   var headerHtml = '<div class="dv-header"><div><div class="dv-date">'+(m+1)+'月'+d+'日</div>' +
-                   '<div class="dv-weekday">'+y+'年 ('+dayLabels[dt.getDay()]+'曜日)</div></div>' +
+                   '<div class="dv-weekday">'+y+'年 ('+dayLabel+'曜日)</div></div>' +
                    '<button class="btn-edit" onclick="openPopup('+y+','+m+','+d+')">edit</button></div>';
-                   
-  var workHtml = '<div style="text-align:center;color:var(--text3);padding:40px 0;font-size:14px;">データがありません。<br>右上のeditから入力してください。</div>';
-  if(rec) {
-    if(rec.type==='work') {
-      var mins = calcDayHours(rec);
+
+  var workHtml = '<div style="text-align:center;color:var(--text3);padding:44px 0;font-size:13px;line-height:1.6;">データがありません。<br>右上のeditから入力してください。</div>';
+  
+  if (rec) {
+    if (rec.type === 'work') {
+      var mTotal = calcDayHours(rec);
       var awayHtml = '';
-      if(rec.away && rec.away.length) {
-        awayHtml = '<div class="dv-label" style="margin-top:14px;">中抜け</div>';
+      if (rec.away && rec.away.length) {
+        awayHtml = '<div class="dv-label" style="margin-top:14px;">中抜け時間</div>';
         rec.away.forEach(function(a){ awayHtml += '<div class="away-row"><div>🏃‍♂️ 外出</div><div>'+(a.start||'--:--')+' 〜 '+(a.end||'--:--')+'</div></div>'; });
       }
       workHtml = '<div style="text-align:center;font-size:42px;margin:10px 0 4px;">🎯</div>' +
-                 '<div style="text-align:center;font-size:28px;font-weight:900;color:var(--text);margin-bottom:14px;">'+(rec.start||'--:--')+' → '+(rec.end||'--:--')+'</div>' +
-                 (rec.memo ? '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;text-align:center;">📝 '+rec.memo+'</div>' : '') +
+                 '<div style="text-align:center;font-size:28px;font-weight:900;color:var(--text);margin-bottom:14px;letter-spacing:1px;">' + (rec.start||'--:--') + ' → ' + (rec.end||'--:--') + '</div>' +
+                 (rec.memo ? '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;text-align:center;">📝 ' + rec.memo + '</div>' : '') +
                  '<div class="dv-block-grid">' +
-                   '<div class="dv-block"><div class="dv-label">労働実働</div><div class="dv-val">'+(mins/60).toFixed(1)+' h</div></div>' +
-                   '<div class="dv-block"><div class="dv-label">休憩</div><div class="dv-val">'+(rec.break||settings.baseBreak||'60')+' 分</div></div>' +
+                   '<div class="dv-block"><div class="dv-label">労働実働</div><div class="dv-val">' + (mTotal/60).toFixed(1) + ' h</div></div>' +
+                   '<div class="dv-block"><div class="dv-label">休憩</div><div class="dv-val">' + (rec.break || settings.baseBreak || '60') + ' 分</div></div>' +
                  '</div>' + awayHtml;
-    } else if(rec.type==='paid') {
-      workHtml = '<div style="text-align:center;font-size:44px;margin:20px 0 10px;">🌴</div><div style="text-align:center;font-size:16px;color:var(--earth);font-weight:700;">有給休暇</div>' +
-                 (rec.memo ? '<div style="font-size:13px;color:var(--text2);margin-top:10px;text-align:center;">📝 '+rec.memo+'</div>' : '');
+    } else if (rec.type === 'paid') {
+      workHtml = '<div style="text-align:center;font-size:40px;margin:10px 0 14px;">🌴</div>' + '<div style="text-align:center;font-size:15px;color:var(--earth);font-weight:700;margin-bottom:14px;">有給休暇</div>' + (rec.memo ? '<div style="font-size:13px;color:var(--text2);text-align:center;">📝 ' + rec.memo + '</div>' : '');
     } else {
-      workHtml = '<div style="text-align:center;font-size:44px;margin:20px 0 10px;">😴</div><div style="text-align:center;font-size:16px;color:var(--text3);font-weight:700;">公休 / 休日</div>' +
-                 (rec.memo ? '<div style="font-size:13px;color:var(--text2);margin-top:10px;text-align:center;">📝 '+rec.memo+'</div>' : '');
+      workHtml = '<div style="text-align:center;font-size:40px;margin:10px 0 14px;">😴</div>' + '<div style="text-align:center;font-size:15px;color:var(--text3);font-weight:700;margin-bottom:14px;">休日</div>' + (rec.memo ? '<div style="font-size:13px;color:var(--text2);text-align:center;">📝 ' + rec.memo + '</div>' : '');
     }
   }
   document.getElementById('dayViewCard').innerHTML = '<div class="day-view-card">' + headerHtml + workHtml + '</div>';
 }
 
-// ════════════════════════════
-// ポップアップ編集関連の処理
-// ════════════════════════════
+/* ════════════════════════════
+   ポップアップ制御ロジック
+════════════════════════════ */
 var popupDay = null; var popupType = 'work'; var popupAway = [];
 
 function openPopup(y, m, d) {
   popupDay = y + '-' + String(m+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
-  document.getElementById('popupTitle').innerText = (m+1)+'月'+d+'日 の記録';
-  
+  document.getElementById('popupTitle').innerText = (m+1) + '月' + d + '日 の記録';
+
   var rec = records[popupDay] || { type: 'work', start: '09:00', end: '18:00', break: settings.baseBreak||'60', memo: '', away: [] };
   popupType = rec.type;
   popupAway = JSON.parse(JSON.stringify(rec.away || []));
-  
+
   document.getElementById('popupStart').value = rec.start || '';
   document.getElementById('popupEnd').value = rec.end || '';
   document.getElementById('popupBreak').value = rec.break || settings.baseBreak || '60';
   document.getElementById('popupMemo').value = rec.memo || '';
-  
+
   setPopupType(popupType);
   renderPopupAway();
   document.getElementById('popupOverlay').style.display = 'flex';
@@ -598,17 +792,17 @@ function setPopupType(t) {
   document.getElementById('btnTypeWork').classList.toggle('active', t==='work');
   document.getElementById('btnTypePaid').classList.toggle('active', t==='paid');
   document.getElementById('btnTypeOff').classList.toggle('active', t==='off');
-  document.getElementById('popupWorkForm').style.display = (t==='work')?'block':'none';
+  document.getElementById('popupWorkForm').style.display = (t==='work') ? 'block' : 'none';
 }
 
 function renderPopupAway() {
   var html = '';
   popupAway.forEach(function(a, i){
     html += '<div class="away-item">' +
-            '<input type="text" class="input-text" style="padding:6px 10px;" placeholder="12:00" value="'+(a.start||'')+'" onchange="popupSetAway('+i+',\'start\',this.value)">' +
-            '<span>〜</span>' +
-            '<input type="text" class="input-text" style="padding:6px 10px;" placeholder="13:00" value="'+(a.end||'')+'" onchange="popupSetAway('+i+',\'end\',this.value)">' +
-            '<button class="btn-del" onclick="popupDelAway('+i+')">✕</button></div>';
+      '<input type="text" class="input-text" style="padding:6px 10px;" placeholder="12:00" value="'+(a.start||'')+'" onchange="popupSetAway('+i+',\'start\',this.value)">' +
+      '<span>〜</span>' +
+      '<input type="text" class="input-text" style="padding:6px 10px;" placeholder="13:00" value="'+(a.end||'')+'" onchange="popupSetAway('+i+',\'end\',this.value)">' +
+      '<button class="pop-del" onclick="popupDelAway('+i+')">✕</button>' + '</div>';
   });
   document.getElementById('popupAwayList').innerHTML = html;
 }
@@ -617,31 +811,60 @@ function popupDelAway(i) { popupAway.splice(i, 1); renderPopupAway(); }
 function popupSetAway(i, field, val) { if (popupAway[i]) popupAway[i][field] = val.trim(); }
 
 function savePopup() {
-  if (!popupDay) return;
-  if (!records[popupDay]) records[popupDay] = {};
-  var rec = records[popupDay];
+  if (popupDay === null) return;
+  var key = '' + popupDay;
+  if (!records[key]) records[key] = {};
+  var rec = records[key];
   rec.type = popupType;
-  rec.memo = document.getElementById('popupMemo').value.trim();
-  
+  rec.memo = document.getElementById('popupMemo').value;
+
   if (popupType === 'work') {
     var s = document.getElementById('popupStart').value.trim();
     var e = document.getElementById('popupEnd').value.trim();
     if (s && parseTime(s) === null) { showToast('⚠️ 開始時刻の形式が正しくありません'); return; }
     if (e && parseTime(e) === null) { showToast('⚠️ 終了時刻の形式が正しくありません'); return; }
     rec.start = s; rec.end = e;
-    rec.break = document.getElementById('popupBreak').value.trim();
+    rec.break = '' + getPopupBreakValue();
     rec.away = popupAway.filter(function(a) { return a.start || a.end; });
   }
-  closePopup(); saveToStorage(); renderMain();
-  var p = popupDay.split('-');
-  renderDayView(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10));
-  showToast('💾 記録を保存しました');
+  closePopup(); saveToStorage();
+  renderMain();
+  
+  var parts = key.split('-');
+  renderDayView(parseInt(parts[0],10), parseInt(parts[1],10)-1, parseInt(parts[2],10));
+  showToast('💾 記録をローカルに保存しました');
+  
+  // GAS接続URLがあれば自動同期
+  if(GAS_URL) { syncWithGasQuiet(); }
 }
 
+/* GAS外部連携通信ロジック */
 function syncWithGas() {
-  if(!GAS_URL) { showToast('⚠️ 設定画面でGASのURL入力をしてください'); return; }
-  showToast('🔄 GASと通信中...');
-  // 将来的な拡張用のFetch処理等
+  if(!GAS_URL) { showToast('⚠️ 設定画面で先にGAS接続URLを入力してください'); return; }
+  showToast('🔄 GASとデータ同期中...');
+  fetch(GAS_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'sync', records: records })
+  })
+  .then(function(res){ return res.json(); })
+  .then(function(data){
+    if(data.status === 'success') {
+      if(data.records && Object.keys(data.records).length > 0) {
+        records = data.records; saveToStorage(); renderMain();
+        var p = selectedDayStr.split('-');
+        renderDayView(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10));
+      }
+      showToast('☁️ クラウドと完全に同期しました！');
+    } else { showToast('❌ 同期エラーが発生しました'); }
+  })
+  .catch(function(err){ showToast('❌ 接続失敗。URLか権限を確認してください'); });
+}
+
+function syncWithGasQuiet() {
+  fetch(GAS_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'sync', records: records })
+  }).catch(function(e){});
 }
 </script>
 </body>
