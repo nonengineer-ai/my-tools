@@ -1151,12 +1151,6 @@ function openPopupFromDate(y, m, d) {
     } catch(e) { records = {}; }
   }
   openPopup(d);
-}');
-      records = cache[y + '_' + m] || {};
-    } catch(e) { records = {}; }
-  }
-  openPopup(d);
-}
 
 // savePopup後に週/日ビューも更新
 var _origSavePopup = typeof savePopup !== 'undefined' ? savePopup : null;
