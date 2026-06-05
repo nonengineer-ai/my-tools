@@ -338,6 +338,7 @@ const GAS_URL = 'https://script.google.com/macros/s/AKfycbzGyKviQ-7s0HgBmXOjrOo_
 function settingsFromState() {
   return {
     income: S.income,
+    incomeMap: S.incomeMap||{},
     cats:   S.cats,
     deds:   S.deds,
     assets: S.assets,
@@ -403,6 +404,7 @@ async function cloudLoad(silent=false) {
       if (cloudTs > localTs) {
         // クラウドが新しい → クラウドで上書き
         S.income   = cloud.income   ?? S.income;
+        S.incomeMap = cloud.incomeMap ?? S.incomeMap;
         S.cats     = cloud.cats     ?? S.cats;
         S.deds     = cloud.deds     ?? S.deds;
         S.assets   = cloud.assets   ?? S.assets;
@@ -523,7 +525,7 @@ function defaultState(){
   const _now=new Date();
   const _ym=_now.getFullYear()+'-'+String(_now.getMonth()+1).padStart(2,'0');
   return{
-    month:_ym,income:300000,coins:0,records:0,gotItems:{},
+    month:_ym,income:300000,incomeMap:{},coins:0,records:0,gotItems:{},
     cats:JSON.parse(JSON.stringify(DEFCATS)),
     exps:[],
     manualPay:{},  // {YYYY-MM_amexThis: 金額, YYYY-MM_rakutenThis: 金額}
@@ -550,7 +552,11 @@ function persist(){
 // UTILS
 // ─────────────────────────────────────────────
 const yen=n=>'¥'+Math.round(n).toLocaleString('ja-JP');
-const budget=c=>c.manual!==null?c.manual:(c.pct?Math.round(S.income*c.pct/100):0);
+const getIncome=()=>(S.incomeMap&&S.incomeMap[S.month])||S.income||0;
+// incomeMapが空の場合、S.incomeを現在月の初期値として設定
+if(!S.incomeMap) S.incomeMap={};
+if(!S.incomeMap[S.month] && S.income) S.incomeMap[S.month]=S.income;
+const budget=c=>c.manual!==null?c.manual:(c.pct?Math.round(getIncome()*c.pct/100):0);
 const spent=(name,mo)=>S.exps.filter(e=>e.cat===name&&e.date.startsWith(mo||S.month)).reduce((s,e)=>s+e.amt,0);
 const spentHalf=(name,first)=>S.exps.filter(e=>{
   if(e.cat!==name||!e.date.startsWith(S.month))return false;
@@ -713,8 +719,8 @@ function renderDashboard(){
   const totalAmx=amxSp+dedAmx;
   const totalCsh=cshSp+dedBank;
 
-  const usePct=S.income>0?Math.min(100,Math.round(totalSp/S.income*100)):0;
-  const remain=S.income-totalSp;
+  const usePct=getIncome()>0?Math.min(100,Math.round(totalSp/getIncome()*100)):0;
+  const remain=getIncome()-totalSp;
 
   const av=getAvatar();
   const items=Object.entries(S.gotItems||{}).filter(([,v])=>v>0);
@@ -777,7 +783,7 @@ function renderDashboard(){
     </div>
     ${alerts}${savingBadge}
     <div class="mrow">
-      <div class="met"><div class="mico">💴</div><div class="mlbl">今月の予算</div><div class="mval cb">${yen(S.income)}</div></div>
+      <div class="met"><div class="mico">💴</div><div class="mlbl">今月の予算</div><div class="mval cb">${yen(getIncome())}</div></div>
       <div class="met"><div class="mico">🛒</div><div class="mlbl">支出合計</div><div class="mval cr">${yen(totalSp)}</div></div>
       <div class="met"><div class="mico">✨</div><div class="mlbl">残り</div><div class="mval ${remain<0?'cr':'cg'}">${yen(remain)}</div></div>
     </div>
@@ -829,7 +835,7 @@ function openIncomeModal(){
     <div class="fg"><label class="flbl">表示月</label>
       <input type="month" id="I_month" class="finp" value="${S.month}"></div>
     <div class="fg"><label class="flbl">今月の予算（円）</label>
-      <input type="number" id="I_income" class="finp" placeholder="300000" value="${S.income}"></div>
+      <input type="number" id="I_income" class="finp" placeholder="300000" value="${getIncome()}"></div>
     <div class="mfoot">
       <button class="btn bsm" id="I_cancel">キャンセル</button>
       <button class="btn bpri bsm" id="I_save">✓ 設定する</button>
@@ -840,7 +846,11 @@ function openIncomeModal(){
     const m=document.getElementById('I_month').value;
     const v=parseInt(document.getElementById('I_income').value)||0;
     if(m) S.month=m;
-    if(v>0){S.income=v; S.cats.forEach(c=>c.manual=null);}
+    if(v>0){
+      if(!S.incomeMap) S.incomeMap={};
+      S.incomeMap[S.month]=v;
+      // S.incomeは上書きしない（他の月に影響するため）
+    }
     persist(); closeModal(); setMonthLabel(); renderCurrent();
   };
 }
@@ -966,7 +976,7 @@ function updateBsRemain(pg){
   const container=pg||document.getElementById('page-budget');
   const total=Array.from(container.querySelectorAll('[data-by]'))
     .reduce((s,el)=>s+(parseInt(el.value)||0),0);
-  const remain=S.income-total;
+  const remain=getIncome()-total;
   const el=document.getElementById('BS_remain');
   if(el){
     el.textContent=yen(remain);
@@ -1355,7 +1365,7 @@ function renderPaySchedule(container){
   </div>`;
 
   let evs=[
-    {mo,day:15,col:'var(--accent)',ico:'💴',name:'給与入金',desc:'前月分給与（今月の生活費）',amt:S.income,plus:true},
+    {mo,day:15,col:'var(--accent)',ico:'💴',name:'給与入金',desc:'前月分給与（今月の生活費）',amt:getIncome(),plus:true},
     {mo,day:26,col:'var(--amex)',ico:'💳',name:'アメックス引き落とし',desc:`${pmo}月8日〜${mo}月7日の利用分`,amt:amexThis,plus:false},
     {mo,day:27,col:'var(--rakuten)',ico:'💳',name:'楽天カード引き落とし',desc:`${pmo}月1〜末日の利用分`,amt:rakThis,plus:false},
     {mo:nmo,day:26,col:'var(--amex)',ico:'💳',name:`アメックス（${nmo}月）`,desc:`${mo}月8日〜${nmo}月7日（見込み）`,amt:amexNext,plus:false,note:true},
@@ -1389,7 +1399,7 @@ function renderPaySchedule(container){
 
   const thisTotal=evs.filter(ev=>ev.mo===mo&&!ev.plus).reduce((s,ev)=>s+ev.amt,0);
   const nextTotal=evs.filter(ev=>ev.mo===nmo&&!ev.plus).reduce((s,ev)=>s+ev.amt,0);
-  const diff=S.income-thisTotal;
+  const diff=getIncome()-thisTotal;
 
   container.innerHTML=manualForm+`
     <div class="card"><div class="ctitle">今月・来月の引き落とし予定</div>${evHTML}</div>
