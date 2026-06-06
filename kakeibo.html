@@ -1001,7 +1001,7 @@ function renderBudget(){
     <p style="font-size:12px;color:var(--text2);font-weight:700;margin-bottom:12px">☰ をドラッグして並び替え・絵文字タップで変更できます</p>
     <div style="background:var(--surface2);border-radius:8px;padding:12px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;border:1px solid var(--border)">
       <div style="font-size:13px;font-weight:700;color:var(--text2)">月収入</div>
-      <div style="font-size:18px;font-weight:900;color:var(--accent)">${yen(S.income)}</div>
+      <div style="font-size:18px;font-weight:900;color:var(--accent)">${yen(getIncome())}</div>
       <div style="font-size:13px;font-weight:700;color:var(--text2)">未割当</div>
       <div style="font-size:18px;font-weight:900" id="BS_remain">-</div>
     </div>
