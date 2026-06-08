@@ -391,20 +391,23 @@ async function cloudSave() {
 }
 
 // クラウドから読込（タイムスタンプで新しい方を優先）
+// 件数ベースの競合解決：多い方が新しいと判定
 async function cloudLoad(silent=false) {
   try {
     if (!silent) showSyncStatus('loading');
 
-    // 設定：ローカルとクラウドを比較して新しい方を採用
+    // 設定の同期（クラウドにdedsやcatsが多ければ採用）
     const sr = await gasGet({ action: 'kakeiboLoadSettings' });
     if (sr.status === 'ok' && sr.data) {
       const cloud = sr.data;
-      const localTs = S.settingsUpdatedAt || 0;
-      const cloudTs = cloud.updatedAt || 0;
-      if (cloudTs > localTs) {
-        // クラウドが新しい → クラウドで上書き
+      const localDeds = (S.deds||[]).length;
+      const cloudDeds = (cloud.deds||[]).length;
+      const localCoins = S.coins||0;
+      const cloudCoins = cloud.coins||0;
+      // コインが多い方が新しい（使うたびに増えるため）
+      if (cloudCoins > localCoins) {
         S.income   = cloud.income   ?? S.income;
-        S.incomeMap = cloud.incomeMap ?? S.incomeMap;
+        S.incomeMap= cloud.incomeMap?? S.incomeMap;
         S.cats     = cloud.cats     ?? S.cats;
         S.deds     = cloud.deds     ?? S.deds;
         S.assets   = cloud.assets   ?? S.assets;
@@ -412,45 +415,32 @@ async function cloudLoad(silent=false) {
         S.records  = cloud.records  ?? S.records;
         S.gotItems = cloud.gotItems ?? S.gotItems;
         S.theme    = cloud.theme    ?? S.theme;
-        S.settingsUpdatedAt = cloudTs;
-      } else if (localTs > cloudTs) {
+      } else {
         // ローカルが新しい → クラウドへ保存
         await gasPost({ action: 'kakeiboSaveSettings', data: settingsFromState() });
       }
     }
 
-    // 当月データ：ローカルとクラウドを比較して新しい方を採用
+    // 当月データの同期（件数が多い方を採用）
     const mr = await gasGet({ action: 'kakeiboLoadMonth', ym: S.month });
     if (mr.status === 'ok' && mr.data) {
       const cloud = mr.data;
-      const monthKey = 'monthUpdatedAt_' + S.month;
-      const localTs = S[monthKey] || 0;
-      const cloudTs = cloud.updatedAt || 0;
-      if (cloudTs > localTs) {
-        // クラウドが新しい → クラウドで上書き
-        const before = JSON.stringify(S.exps.filter(e => e.date.startsWith(S.month)));
+      const localCount = S.exps.filter(e=>e.date.startsWith(S.month)).length;
+      const cloudCount = (cloud.exps||[]).length;
+      if (cloudCount > localCount) {
+        // クラウドの方が件数多い → クラウドで上書き
         S.exps = [
           ...S.exps.filter(e => !e.date.startsWith(S.month)),
           ...(cloud.exps || []),
         ];
-        Object.keys(S.manualPay || {}).forEach(k => { if(k.startsWith(S.month)) delete S.manualPay[k]; });
-        Object.assign(S.manualPay, cloud.manualPay || {});
-        S[monthKey] = cloudTs;
-        const after = JSON.stringify(S.exps.filter(e => e.date.startsWith(S.month)));
-        if (!silent || before !== after) {
-          persist();
-          applyTheme(); setMonthLabel(); buildNav(); renderCurrent();
-        } else { persist(); }
-      } else if (localTs > cloudTs) {
-        // ローカルが新しい → クラウドへ保存
-        await gasPost({ action: 'kakeiboSaveMonth', ym: S.month, data: monthDataFromState(S.month) });
-        persist();
+        Object.keys(S.manualPay||{}).forEach(k=>{if(k.startsWith(S.month))delete S.manualPay[k];});
+        Object.assign(S.manualPay, cloud.manualPay||{});
       } else {
-        persist();
+        // ローカルの方が件数多い or 同数 → クラウドへ保存
+        await gasPost({ action: 'kakeiboSaveMonth', ym: S.month, data: monthDataFromState(S.month) });
       }
-    } else {
-      persist();
     }
+    persist();
     if (!silent) { showSyncStatus('loaded'); applyTheme(); setMonthLabel(); buildNav(); renderCurrent(); }
     else showSyncStatus('synced');
   } catch(e) {
@@ -459,30 +449,28 @@ async function cloudLoad(silent=false) {
   }
 }
 
-// 月を切り替えた時に当月データだけ追加読込（タイムスタンプで新しい方を優先）
+// 月切り替え時：件数ベースで新しい方を採用
 async function cloudLoadMonth(ym) {
   try {
     showSyncStatus('loading');
     const mr = await gasGet({ action: 'kakeiboLoadMonth', ym });
     if (mr.status === 'ok' && mr.data) {
       const cloud = mr.data;
-      const monthKey = 'monthUpdatedAt_' + ym;
-      const localTs = S[monthKey] || 0;
-      const cloudTs = cloud.updatedAt || 0;
-      if (cloudTs > localTs) {
+      const localCount = S.exps.filter(e=>e.date.startsWith(ym)).length;
+      const cloudCount = (cloud.exps||[]).length;
+      if (cloudCount > localCount) {
         S.exps = [
           ...S.exps.filter(e => !e.date.startsWith(ym)),
           ...(cloud.exps || []),
         ];
-        Object.keys(S.manualPay || {}).forEach(k => { if(k.startsWith(ym)) delete S.manualPay[k]; });
-        Object.assign(S.manualPay, cloud.manualPay || {});
-        S[monthKey] = cloudTs;
+        Object.keys(S.manualPay||{}).forEach(k=>{if(k.startsWith(ym))delete S.manualPay[k];});
+        Object.assign(S.manualPay, cloud.manualPay||{});
         persist();
-      } else if (localTs > cloudTs) {
+      } else {
         await gasPost({ action: 'kakeiboSaveMonth', ym, data: monthDataFromState(ym) });
       }
     }
-    showSyncStatus('loaded');
+    showSyncStatus('synced');
   } catch(e) {
     showSyncStatus('error');
   }
