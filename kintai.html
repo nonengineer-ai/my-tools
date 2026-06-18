@@ -163,6 +163,31 @@ body {
     box-shadow: 0 0 0 3px rgba(255,255,255,0.12);
   }
 }
+.rates-section { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border2); }
+.rates-title { font-size: 13px; color: var(--text2); margin-bottom: 10px; font-weight: 600; }
+.rate-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.rate-row input[type="month"] {
+  border: 2px solid var(--border2); border-radius: 10px; padding: 6px 10px;
+  font-size: 13px; background: var(--bg2); color: var(--text); font-family: inherit;
+}
+.rate-row input[type="number"] {
+  width: 90px; border: 2px solid var(--border2); border-radius: 10px; padding: 7px 10px;
+  font-size: 14px; background: var(--bg2); color: var(--text); font-family: inherit;
+}
+.rate-row input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,0,0,0.10); }
+.rate-sep, .rate-yen { font-size: 13px; color: var(--text2); }
+.btn-rate-del {
+  background: transparent; border: none; color: var(--text3);
+  cursor: pointer; font-size: 15px; padding: 4px 8px; border-radius: 6px; font-family: inherit;
+}
+.btn-rate-del:hover { background: var(--bg2); color: var(--text); }
+.btn-add-rate {
+  background: var(--bg2); border: 1.5px dashed var(--border2); border-radius: 10px;
+  padding: 7px 14px; font-size: 13px; color: var(--text2); cursor: pointer;
+  font-family: inherit; transition: all 0.15s; margin-top: 4px;
+}
+.btn-add-rate:hover { border-color: var(--accent); color: var(--text); }
+.rates-hint { font-size: 11px; color: var(--text3); margin-top: 8px; line-height: 1.5; }
 
 /* ════════════════════════════
    有給パネル
@@ -805,8 +830,13 @@ select:focus { outline: none; border-color: var(--red); }
   <div class="card">
     <div class="card-title"><span class="inline-icon" style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span> 基本設定</div>
     <div class="settings-row">
-      <label>時給 <input type="number" id="hourlyRate" value="1500" min="0" step="10"> 円</label>
       <label>⏱ 所定労働時間 <input type="number" id="stdHours" value="8" min="1" max="12" step="0.5"> 時間/日</label>
+    </div>
+    <div class="rates-section">
+      <div class="rates-title">💴 時給</div>
+      <div id="ratesList"></div>
+      <button class="btn-add-rate" onclick="addRate()">＋ 時給変更を追加</button>
+      <div class="rates-hint">※ 期間ごとに時給を設定できます。各月の給与は、その月に有効だった時給で計算されます。</div>
     </div>
   </div>
 
@@ -1165,6 +1195,86 @@ var records = {};
 var allRecords = {};
 var saving = false;
 var LOCAL_KEY = 'kintai_cache';
+var rates = [{ from: '2000-01', rate: 1500 }];
+
+function ymKey(year, month) {
+  var m = month + 1;
+  return year + '-' + (m < 10 ? '0' : '') + m;
+}
+function getRateForMonth(year, month) {
+  if (!rates || rates.length === 0) return 1500;
+  var ym = ymKey(year, month);
+  var sorted = rates.slice().sort(function(a,b){ return a.from < b.from ? -1 : a.from > b.from ? 1 : 0; });
+  var applicable = parseFloat(sorted[0].rate) || 1500;
+  for (var i = 0; i < sorted.length; i++) {
+    if (sorted[i].from <= ym) applicable = parseFloat(sorted[i].rate) || 0;
+    else break;
+  }
+  return applicable;
+}
+function applyRatesFromSettings(s) {
+  if (s.rates) {
+    var arr = s.rates;
+    if (typeof arr === 'string') {
+      try { arr = JSON.parse(arr); } catch(e) { arr = null; }
+    }
+    if (arr && arr.length > 0) {
+      rates = arr.map(function(r){ return { from: r.from || '2000-01', rate: parseFloat(r.rate) || 0 }; });
+      return;
+    }
+  }
+  if (s.rate !== undefined && s.rate !== null && s.rate !== '') {
+    rates = [{ from: '2000-01', rate: parseFloat(s.rate) || 1500 }];
+  }
+}
+function renderRates() {
+  var container = document.getElementById('ratesList');
+  if (!container) return;
+  rates.sort(function(a,b){ return a.from < b.from ? -1 : a.from > b.from ? 1 : 0; });
+  var html = '';
+  for (var i = 0; i < rates.length; i++) {
+    var r = rates[i];
+    var delBtn = rates.length > 1 ? '<button class="btn-rate-del" onclick="delRate('+i+')" title="この時給を削除">✕</button>' : '';
+    html += '<div class="rate-row">'
+      + '<input type="month" value="'+r.from+'" onchange="setRateField('+i+',\'from\',this.value)">'
+      + '<span class="rate-sep">から</span>'
+      + '<input type="number" value="'+r.rate+'" min="0" step="10" onchange="setRateField('+i+',\'rate\',this.value)">'
+      + '<span class="rate-yen">円</span>'
+      + delBtn
+      + '</div>';
+  }
+  container.innerHTML = html;
+}
+function addRate() {
+  var defaultFrom;
+  var defaultRate = 1500;
+  if (rates.length > 0) {
+    var sorted = rates.slice().sort(function(a,b){ return a.from < b.from ? 1 : -1; });
+    var latest = sorted[0];
+    defaultRate = latest.rate;
+    var parts = latest.from.split('-');
+    var y = parseInt(parts[0]), m = parseInt(parts[1]) + 1;
+    if (m > 12) { m = 1; y++; }
+    defaultFrom = y + '-' + (m < 10 ? '0' : '') + m;
+  } else {
+    var now = new Date();
+    defaultFrom = ymKey(now.getFullYear(), now.getMonth() + 1 > 11 ? 0 : now.getMonth() + 1);
+  }
+  rates.push({ from: defaultFrom, rate: defaultRate });
+  renderRates(); saveSettings(); render();
+}
+function delRate(i) {
+  if (rates.length <= 1) return;
+  if (!confirm('この時給設定を削除しますか？')) return;
+  rates.splice(i, 1);
+  renderRates(); saveSettings(); render();
+}
+function setRateField(i, field, value) {
+  if (!rates[i]) return;
+  if (field === 'rate') rates[i].rate = parseFloat(value) || 0;
+  else rates[i][field] = value || '2000-01';
+  renderRates(); saveSettings(); render();
+}
 
 function loadLocalCache() {
   try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}'); }
@@ -1191,11 +1301,12 @@ function init() {
   if (cache[cacheKey]) { records = cache[cacheKey]; allRecords[currentMonth] = records; }
   if (cache['settings']) {
     var s = cache['settings'];
-    if (s.rate) document.getElementById('hourlyRate').value = s.rate;
+    applyRatesFromSettings(s);
     if (s.hours) document.getElementById('stdHours').value = s.hours;
     if (s.paidCarry !== undefined) document.getElementById('paidCarry').value = s.paidCarry;
     if (s.paidGrant !== undefined) document.getElementById('paidGrant').value = s.paidGrant;
   }
+  renderRates();
   if (cache[cacheKey] || cache['settings']) { render(); updatePaidDisplay(); }
   gasWarmup();
   setTimeout(function() { loadSettings(!!cache[cacheKey]); }, 200);
@@ -1206,7 +1317,8 @@ function loadSettings(silent) {
     .then(function(r) { return r.json(); })
     .then(function(res) {
       if (res.settings) {
-        if (res.settings.rate) document.getElementById('hourlyRate').value = res.settings.rate;
+        applyRatesFromSettings(res.settings);
+        renderRates();
         if (res.settings.hours) document.getElementById('stdHours').value = res.settings.hours;
         if (res.settings.paidCarry !== undefined) document.getElementById('paidCarry').value = res.settings.paidCarry;
         if (res.settings.paidGrant !== undefined) document.getElementById('paidGrant').value = res.settings.paidGrant;
@@ -1217,9 +1329,16 @@ function loadSettings(silent) {
     .catch(function() { if (!silent) loadFromStorage(false); });
 }
 function saveSettings() {
+  var hours = document.getElementById('stdHours').value;
+  var paidCarry = document.getElementById('paidCarry').value;
+  var paidGrant = document.getElementById('paidGrant').value;
+  var latestRate = rates.length > 0 ? rates.slice().sort(function(a,b){ return a.from < b.from ? 1 : -1; })[0].rate : 1500;
+  saveLocalCache(currentYear, currentMonth, null, {
+    rate: latestRate, rates: rates, hours: hours, paidCarry: paidCarry, paidGrant: paidGrant
+  });
   fetch(GAS_URL, {
     method: 'POST',
-    body: JSON.stringify({ action: 'saveSettings', rate: document.getElementById('hourlyRate').value, hours: document.getElementById('stdHours').value, paidCarry: document.getElementById('paidCarry').value, paidGrant: document.getElementById('paidGrant').value })
+    body: JSON.stringify({ action: 'saveSettings', rate: latestRate, rates: JSON.stringify(rates), hours: hours, paidCarry: paidCarry, paidGrant: paidGrant })
   }).catch(function() {});
 }
 function savePaidSettings() { saveSettings(); }
@@ -1392,7 +1511,7 @@ function render() {
   var months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
   document.getElementById('monthLabel').textContent = currentYear + '年 ' + months[currentMonth];
   var stdH = parseFloat(document.getElementById('stdHours').value || 8);
-  var rate = parseFloat(document.getElementById('hourlyRate').value || 1500);
+  var rate = getRateForMonth(currentYear, currentMonth);
   var totalDays=0, totalWorkMins=0, totalOTMins=0, totalPay=0;
   var h1Days=0,h1WorkMins=0,h1OTMins=0,h1StdMins=0,h1Paid=0;
   var h2Days=0,h2WorkMins=0,h2OTMins=0,h2StdMins=0,h2Paid=0;
@@ -1627,7 +1746,7 @@ function savePopup() {
 }
 document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closePopup(); });
 document.addEventListener('input', function(e) {
-  if (e.target.id === 'hourlyRate' || e.target.id === 'stdHours') { saveSettings(); render(); }
+  if (e.target.id === 'stdHours') { saveSettings(); render(); }
 });
 init();
 </script>
