@@ -1237,13 +1237,22 @@ function renderRates() {
   var nowY = new Date().getFullYear();
   var minY = nowY - 10, maxY = nowY + 5;
 
+  // 既存値の年を範囲に含める（保存済みの古い年でも正しく表示）
+  for (var k = 0; k < rates.length; k++) {
+    var py = parseInt((rates[k].from || '').split('-')[0]);
+    if (py && py >= 1900 && py <= 2100) {
+      if (py < minY) minY = py;
+      if (py > maxY) maxY = py;
+    }
+  }
+
   var html = '';
   for (var i = 0; i < rates.length; i++) {
     var r = rates[i];
     var parts = (r.from || '2000-01').split('-');
-    var ry = parseInt(parts[0]) || nowY;
+    var ry = parseInt(parts[0]);
     var rm = parseInt(parts[1]) || 1;
-    if (ry < 1900 || ry > 2100) ry = nowY;
+    if (!ry || ry < 1900 || ry > 2100) ry = nowY;
 
     var yearOpts = '';
     for (var y = minY; y <= maxY; y++) {
