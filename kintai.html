@@ -166,10 +166,12 @@ body {
 .rates-section { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border2); }
 .rates-title { font-size: 13px; color: var(--text2); margin-bottom: 10px; font-weight: 600; }
 .rate-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-.rate-row input[type="month"] {
+.rate-row select {
   border: 2px solid var(--border2); border-radius: 10px; padding: 6px 10px;
   font-size: 13px; background: var(--bg2); color: var(--text); font-family: inherit;
+  cursor: pointer;
 }
+.rate-row select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,0,0,0.10); }
 .rate-row input[type="number"] {
   width: 90px; border: 2px solid var(--border2); border-radius: 10px; padding: 7px 10px;
   font-size: 14px; background: var(--bg2); color: var(--text); font-family: inherit;
@@ -1231,12 +1233,31 @@ function renderRates() {
   var container = document.getElementById('ratesList');
   if (!container) return;
   rates.sort(function(a,b){ return a.from < b.from ? -1 : a.from > b.from ? 1 : 0; });
+
+  var nowY = new Date().getFullYear();
+  var minY = nowY - 10, maxY = nowY + 5;
+
   var html = '';
   for (var i = 0; i < rates.length; i++) {
     var r = rates[i];
+    var parts = (r.from || '2000-01').split('-');
+    var ry = parseInt(parts[0]) || nowY;
+    var rm = parseInt(parts[1]) || 1;
+    if (ry < 1900 || ry > 2100) ry = nowY;
+
+    var yearOpts = '';
+    for (var y = minY; y <= maxY; y++) {
+      yearOpts += '<option value="'+y+'"'+(y===ry?' selected':'')+'>'+y+'年</option>';
+    }
+    var monthOpts = '';
+    for (var m = 1; m <= 12; m++) {
+      monthOpts += '<option value="'+m+'"'+(m===rm?' selected':'')+'>'+m+'月</option>';
+    }
+
     var delBtn = rates.length > 1 ? '<button class="btn-rate-del" onclick="delRate('+i+')" title="この時給を削除">✕</button>' : '';
     html += '<div class="rate-row">'
-      + '<input type="month" value="'+r.from+'" onchange="setRateField('+i+',\'from\',this.value)">'
+      + '<select onchange="setRateYM('+i+',this.value,null)">'+yearOpts+'</select>'
+      + '<select onchange="setRateYM('+i+',null,this.value)">'+monthOpts+'</select>'
       + '<span class="rate-sep">から</span>'
       + '<input type="number" value="'+r.rate+'" min="0" step="10" onchange="setRateField('+i+',\'rate\',this.value)">'
       + '<span class="rate-yen">円</span>'
@@ -1244,6 +1265,16 @@ function renderRates() {
       + '</div>';
   }
   container.innerHTML = html;
+}
+function setRateYM(i, year, month) {
+  if (!rates[i]) return;
+  var parts = (rates[i].from || '2000-01').split('-');
+  var y = (year !== null && year !== undefined) ? parseInt(year) : parseInt(parts[0]);
+  var m = (month !== null && month !== undefined) ? parseInt(month) : parseInt(parts[1]);
+  if (!y || y < 1900 || y > 2100) y = new Date().getFullYear();
+  if (!m || m < 1 || m > 12) m = 1;
+  rates[i].from = y + '-' + (m < 10 ? '0' : '') + m;
+  renderRates(); saveSettings(); render();
 }
 function addRate() {
   var defaultFrom;
