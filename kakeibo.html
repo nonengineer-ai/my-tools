@@ -339,6 +339,7 @@ function settingsFromState() {
   return {
     income: S.income,
     incomeMap: S.incomeMap||{},
+    budgetMap: S.budgetMap||{},
     cats:   S.cats,
     deds:   S.deds,
     assets: S.assets,
@@ -408,6 +409,7 @@ async function cloudLoad(silent=false) {
       if (cloudCoins > localCoins) {
         S.income   = cloud.income   ?? S.income;
         S.incomeMap= cloud.incomeMap?? S.incomeMap;
+        S.budgetMap= cloud.budgetMap?? S.budgetMap;
         S.cats     = cloud.cats     ?? S.cats;
         S.deds     = cloud.deds     ?? S.deds;
         S.assets   = cloud.assets   ?? S.assets;
@@ -513,7 +515,7 @@ function defaultState(){
   const _now=new Date();
   const _ym=_now.getFullYear()+'-'+String(_now.getMonth()+1).padStart(2,'0');
   return{
-    month:_ym,income:300000,incomeMap:{},coins:0,records:0,gotItems:{},
+    month:_ym,income:300000,incomeMap:{},budgetMap:{},coins:0,records:0,gotItems:{},
     cats:JSON.parse(JSON.stringify(DEFCATS)),
     exps:[],
     manualPay:{},  // {YYYY-MM_amexThis: 金額, YYYY-MM_rakutenThis: 金額}
@@ -544,7 +546,22 @@ const getIncome=()=>(S.incomeMap&&S.incomeMap[S.month])||S.income||0;
 // incomeMapが空の場合、S.incomeを現在月の初期値として設定
 if(!S.incomeMap) S.incomeMap={};
 if(!S.incomeMap[S.month] && S.income) S.incomeMap[S.month]=S.income;
-const budget=c=>c.manual!==null?c.manual:(c.pct?Math.round(getIncome()*c.pct/100):0);
+if(!S.budgetMap) S.budgetMap={};
+// 既存データ移行：budgetMapが空の月は現在のcats.manual値を初期値としてコピー
+if(!S.budgetMap[S.month]){
+  S.budgetMap[S.month]={};
+  S.cats.forEach(c=>{ S.budgetMap[S.month][c.name]=c.manual; });
+}
+// 月別予算を取得（その月の設定があればそれを使用、なければカテゴリのデフォルトmanual値）
+const getBudgetManual=c=>{
+  const mb=S.budgetMap[S.month];
+  if(mb && Object.prototype.hasOwnProperty.call(mb,c.name)) return mb[c.name];
+  return c.manual;
+};
+const budget=c=>{
+  const m=getBudgetManual(c);
+  return m!==null&&m!==undefined?m:(c.pct?Math.round(getIncome()*c.pct/100):0);
+};
 const spent=(name,mo)=>S.exps.filter(e=>e.cat===name&&e.date.startsWith(mo||S.month)).reduce((s,e)=>s+e.amt,0);
 const spentHalf=(name,first)=>S.exps.filter(e=>{
   if(e.cat!==name||!e.date.startsWith(S.month))return false;
@@ -1026,13 +1043,14 @@ function renderBudget(){
       const i=+el.dataset.delidx;
       if(!confirm('「'+S.cats[i].name+'」を削除しますか？')) return;
       // 削除前に現在の入力値を保存
+      if(!S.budgetMap[S.month]) S.budgetMap[S.month]={};
       pg.querySelectorAll('.bsrow').forEach(row=>{
         const ri=+row.dataset.i;
         if(ri===i) return;
         const n=row.querySelector('[data-bn="'+ri+'"]').value.trim();
         const y=parseInt(row.querySelector('[data-by="'+ri+'"]').value)||0;
         if(n) S.cats[ri].name=n;
-        S.cats[ri].manual=y>0?y:null;
+        S.budgetMap[S.month][S.cats[ri].name]=y>0?y:null;
       });
       S.cats.splice(i,1); renderBudget();
     };
@@ -1047,12 +1065,13 @@ function renderBudget(){
       const to=+row.dataset.i;
       if(dragIdx!==null&&dragIdx!==to){
         // 並び替え前に入力値を保存
+        if(!S.budgetMap[S.month]) S.budgetMap[S.month]={};
         pg.querySelectorAll('.bsrow').forEach(row2=>{
           const ri=+row2.dataset.i;
           const n=row2.querySelector('[data-bn="'+ri+'"]').value.trim();
           const y=parseInt(row2.querySelector('[data-by="'+ri+'"]').value)||0;
           if(n) S.cats[ri].name=n;
-          S.cats[ri].manual=y>0?y:null;
+          S.budgetMap[S.month][S.cats[ri].name]=y>0?y:null;
         });
         const [moved]=S.cats.splice(dragIdx,1);
         S.cats.splice(to,0,moved);
@@ -1070,12 +1089,13 @@ function renderBudget(){
     const name=prompt('カテゴリ名を入力してください');
     if(!name) return;
     // 現在の入力値を先に保存してから追加
+    if(!S.budgetMap[S.month]) S.budgetMap[S.month]={};
     pg.querySelectorAll('.bsrow').forEach(row=>{
       const i=+row.dataset.i;
       const n=row.querySelector('[data-bn="'+i+'"]').value.trim();
       const y=parseInt(row.querySelector('[data-by="'+i+'"]').value)||0;
       if(n) S.cats[i].name=n;
-      S.cats[i].manual=y>0?y:null;
+      S.budgetMap[S.month][S.cats[i].name]=y>0?y:null;
     });
     const cols=['#10b981','#6366f1','#f59e0b','#ec4899','#8b5cf6'];
     S.cats.push({name,e:'📦',pct:0,col:cols[S.cats.length%cols.length],manual:null});
@@ -1084,12 +1104,14 @@ function renderBudget(){
 
   // 保存
   pg.querySelector('#btnSaveBudget').onclick=()=>{
+    if(!S.budgetMap[S.month]) S.budgetMap[S.month]={};
     pg.querySelectorAll('.bsrow').forEach(row=>{
       const i=+row.dataset.i;
       const n=row.querySelector('[data-bn="'+i+'"]').value.trim();
       const y=parseInt(row.querySelector('[data-by="'+i+'"]').value)||0;
       if(n) S.cats[i].name=n;
-      S.cats[i].manual=y>0?y:null;
+      // 金額は当月のbudgetMapにのみ保存（他の月に影響しない）
+      S.budgetMap[S.month][S.cats[i].name]=y>0?y:null;
     });
     persist();
     toast('予算を保存したよ！🎯');
@@ -1312,12 +1334,12 @@ function renderPaySchedule(container){
   const rakThisAuto=S.exps.filter(e=>e.card==='r'&&e.date.startsWith(pym)).reduce((s,e)=>s+e.amt,0);
   const amexNextAuto=S.exps.filter(e=>e.card==='a'&&e.date.startsWith(ym)&&+e.date.split('-')[2]>=8).reduce((s,e)=>s+e.amt,0);
   const rakNextAuto=S.exps.filter(e=>e.card==='r'&&e.date.startsWith(ym)).reduce((s,e)=>s+e.amt,0);
-  // 手入力が入っていればそちらを優先（自動集計に加算）
+  // 手入力があればそちらを実際の引き落とし額として使用（自動集計を無視）
   const mp=S.manualPay||{};
-  const amexThis=amexThisAuto+(mp[ym+'_amexThis']||0);
-  const rakThis=rakThisAuto+(mp[ym+'_rakThis']||0);
-  const amexNext=amexNextAuto+(mp[ym+'_amexNext']||0);
-  const rakNext=rakNextAuto+(mp[ym+'_rakNext']||0);
+  const amexThis=mp[ym+'_amexThis']>0?mp[ym+'_amexThis']:amexThisAuto;
+  const rakThis=mp[ym+'_rakThis']>0?mp[ym+'_rakThis']:rakThisAuto;
+  const amexNext=mp[ym+'_amexNext']>0?mp[ym+'_amexNext']:amexNextAuto;
+  const rakNext=mp[ym+'_rakNext']>0?mp[ym+'_rakNext']:rakNextAuto;
 
   const today=new Date();
 
@@ -1325,25 +1347,25 @@ function renderPaySchedule(container){
   const mpKey=(k)=>ym+'_'+k;
   const mpVal=(k)=>mp[mpKey(k)]||0;
   const manualForm=`<div class="card" style="margin-bottom:14px">
-    <div class="ctitle">✏️ カード利用分 手入力（前月繰越分など）</div>
-    <p style="font-size:11px;color:var(--text2);font-weight:700;margin-bottom:12px">アプリ外で使った分や前月繰越分を追加入力できます（自動集計に加算されます）</p>
+    <div class="ctitle">✏️ 実際の引き落とし額を入力</div>
+    <p style="font-size:11px;color:var(--text2);font-weight:700;margin-bottom:12px">ポイント払いなどで自動集計と異なる場合に入力してください。入力すると自動集計より優先されます（空欄の場合は自動集計を使用）</p>
     <div class="frow">
-      <div class="fg"><label class="flbl">💳 AMEX 今月26日払い追加分</label>
-        <input type="number" id="MP_amexThis" class="finp" value="${mpVal('amexThis')||''}" placeholder="0" style="font-size:13px;padding:7px 10px">
+      <div class="fg"><label class="flbl">💳 AMEX 今月26日払い</label>
+        <input type="number" id="MP_amexThis" class="finp" value="${mpVal('amexThis')||''}" placeholder="自動: ${yen(amexThisAuto)}" style="font-size:13px;padding:7px 10px">
         <div style="font-size:10px;color:var(--text2);font-weight:700;margin-top:3px">${pmo}月8日〜${mo}月7日分</div>
       </div>
-      <div class="fg"><label class="flbl">💳 楽天 今月27日払い追加分</label>
-        <input type="number" id="MP_rakThis" class="finp" value="${mpVal('rakThis')||''}" placeholder="0" style="font-size:13px;padding:7px 10px">
+      <div class="fg"><label class="flbl">💳 楽天 今月27日払い</label>
+        <input type="number" id="MP_rakThis" class="finp" value="${mpVal('rakThis')||''}" placeholder="自動: ${yen(rakThisAuto)}" style="font-size:13px;padding:7px 10px">
         <div style="font-size:10px;color:var(--text2);font-weight:700;margin-top:3px">${pmo}月1日〜末日分</div>
       </div>
     </div>
     <div class="frow">
-      <div class="fg"><label class="flbl">💳 AMEX 来月26日払い追加分</label>
-        <input type="number" id="MP_amexNext" class="finp" value="${mpVal('amexNext')||''}" placeholder="0" style="font-size:13px;padding:7px 10px">
+      <div class="fg"><label class="flbl">💳 AMEX 来月26日払い</label>
+        <input type="number" id="MP_amexNext" class="finp" value="${mpVal('amexNext')||''}" placeholder="自動: ${yen(amexNextAuto)}" style="font-size:13px;padding:7px 10px">
         <div style="font-size:10px;color:var(--text2);font-weight:700;margin-top:3px">${mo}月8日〜${nmo}月7日分</div>
       </div>
-      <div class="fg"><label class="flbl">💳 楽天 来月27日払い追加分</label>
-        <input type="number" id="MP_rakNext" class="finp" value="${mpVal('rakNext')||''}" placeholder="0" style="font-size:13px;padding:7px 10px">
+      <div class="fg"><label class="flbl">💳 楽天 来月27日払い</label>
+        <input type="number" id="MP_rakNext" class="finp" value="${mpVal('rakNext')||''}" placeholder="自動: ${yen(rakNextAuto)}" style="font-size:13px;padding:7px 10px">
         <div style="font-size:10px;color:var(--text2);font-weight:700;margin-top:3px">${mo}月1日〜末日分</div>
       </div>
     </div>
