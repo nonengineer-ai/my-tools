@@ -347,6 +347,7 @@ function settingsFromState() {
     records: S.records,
     gotItems: S.gotItems,
     theme:  S.theme,
+    deletedExpIds: S.deletedExpIds||{},
     updatedAt: Date.now(),
   };
 }
@@ -391,22 +392,18 @@ async function cloudSave() {
   }
 }
 
-// クラウドから読込（タイムスタンプで新しい方を優先）
-// 件数ベースの競合解決：多い方が新しいと判定
+// クラウドから読込（設定は更新時刻(updatedAt)が新しい方を優先）
 async function cloudLoad(silent=false) {
   try {
     if (!silent) showSyncStatus('loading');
 
-    // 設定の同期（クラウドにdedsやcatsが多ければ採用）
+    // 設定の同期（settingsUpdatedAtが新しい方を採用。コイン数などの件数では判定しない）
     const sr = await gasGet({ action: 'kakeiboLoadSettings' });
     if (sr.status === 'ok' && sr.data) {
       const cloud = sr.data;
-      const localDeds = (S.deds||[]).length;
-      const cloudDeds = (cloud.deds||[]).length;
-      const localCoins = S.coins||0;
-      const cloudCoins = cloud.coins||0;
-      // コインが多い方が新しい（使うたびに増えるため）
-      if (cloudCoins > localCoins) {
+      const localUpdatedAt = S.settingsUpdatedAt || 0;
+      const cloudUpdatedAt = cloud.updatedAt || 0;
+      if (cloudUpdatedAt > localUpdatedAt) {
         S.income   = cloud.income   ?? S.income;
         S.incomeMap= cloud.incomeMap?? S.incomeMap;
         S.budgetMap= cloud.budgetMap?? S.budgetMap;
@@ -417,13 +414,18 @@ async function cloudLoad(silent=false) {
         S.records  = cloud.records  ?? S.records;
         S.gotItems = cloud.gotItems ?? S.gotItems;
         S.theme    = cloud.theme    ?? S.theme;
+        S.settingsUpdatedAt = cloudUpdatedAt;
       } else {
         // ローカルが新しい → クラウドへ保存
         await gasPost({ action: 'kakeiboSaveSettings', data: settingsFromState() });
       }
+      // 削除済みID一覧はどちらが新しいかに関わらず両方の記録を統合（削除の取りこぼし防止）
+      const mergedTomb = { ...(cloud.deletedExpIds||{}) };
+      Object.entries(S.deletedExpIds||{}).forEach(([id,t])=>{ mergedTomb[id]=Math.max(mergedTomb[id]||0, t); });
+      S.deletedExpIds = mergedTomb;
     }
 
-    // 当月データの同期（件数が多い方を採用）
+    // 当月データの同期（ローカル・クラウドをマージし、削除済みIDは復活させない）
     const mr = await gasGet({ action: 'kakeiboLoadMonth', ym: S.month });
     if (mr.status === 'ok' && mr.data) {
       const cloud = mr.data;
@@ -433,7 +435,7 @@ async function cloudLoad(silent=false) {
         ...dedupeExps([
           ...S.exps.filter(e => e.date.startsWith(S.month)),
           ...(cloud.exps || []),
-        ])
+        ]).filter(e => !S.deletedExpIds[e.id])
       ];
       Object.assign(S.manualPay, cloud.manualPay||{});
       await gasPost({ action: 'kakeiboSaveMonth', ym: S.month, data: monthDataFromState(S.month) });
@@ -447,7 +449,7 @@ async function cloudLoad(silent=false) {
   }
 }
 
-// 月切り替え時：件数ベースで新しい方を採用
+// 月切り替え時：ローカル・クラウドをマージ（削除済みIDは復活させない）
 async function cloudLoadMonth(ym) {
   try {
     showSyncStatus('loading');
@@ -460,12 +462,14 @@ async function cloudLoadMonth(ym) {
         ...dedupeExps([
           ...S.exps.filter(e => e.date.startsWith(ym)),
           ...(cloud.exps || []),
-        ])
+        ]).filter(e => !S.deletedExpIds[e.id])
       ];
       S.exps = merged;
       Object.assign(S.manualPay, cloud.manualPay||{});
-      persist();
+      // マージ結果を先にクラウドへ確定保存してから、ローカルの持ち回り保存を行う
+      // （順序を逆にすると、直後の背景保存と競合して古いデータで上書きされる恐れがあるため）
       await gasPost({ action: 'kakeiboSaveMonth', ym, data: monthDataFromState(ym) });
+      persist();
     }
     showSyncStatus('synced');
   } catch(e) {
@@ -517,11 +521,13 @@ function defaultState(){
     assets:{nisa:0,ideco:0,futsu:0,teiki:0},
     deds:[],
     theme:'light',
+    deletedExpIds:{},  // {id: 削除時刻} 削除済み支出のIDを記録し、同期時に復活しないようにする
   };
 }
 let S;
 try{ S=JSON.parse(localStorage.getItem('kakeibo7')||'null')||defaultState(); }
 catch(e){ S=defaultState(); }
+if(!S.deletedExpIds) S.deletedExpIds={};
 
 function persist(){
   // 保存時刻を記録（競合防止）
@@ -556,10 +562,11 @@ if(!S.budgetMap[S.month]){
   }
 }
 // 重複除去関数（共通）
+// idがある支出はidで判定（同内容の別支出を誤って1件にまとめない）。idが無い古いデータのみ内容ベースで判定
 function dedupeExps(exps){
   const seen=new Set();
   return exps.filter(e=>{
-    const key=e.date+'|'+e.cat+'|'+e.amt+'|'+e.card+'|'+(e.memo||'');
+    const key=e.id?('id:'+e.id):(e.date+'|'+e.cat+'|'+e.amt+'|'+e.card+'|'+(e.memo||''));
     if(seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -808,6 +815,26 @@ function renderDashboard(){
     </div>`;
   }).join('');
 
+  // 迷子カテゴリ（リネーム等でカテゴリ一覧から消えた名前の支出）も金額が消えて見えないよう別枠で表示
+  const knownCatNames=new Set(S.cats.map(c=>c.name));
+  const orphanNames=[...new Set(mesAll.map(e=>e.cat).filter(n=>!knownCatNames.has(n)))];
+  const orphanBars=orphanNames.map(name=>{
+    const sp=mesAll.filter(e=>e.cat===name).reduce((s,e)=>s+e.amt,0);
+    const mergeOpts=S.cats.map(c=>`<option value="${c.name}">${c.e} ${c.name}</option>`).join('');
+    return `<div class="bitem">
+      <div class="bhdr">
+        <div class="bname"><span style="font-size:17px">❓</span>${name}<span style="font-size:10px;color:var(--text2);font-weight:700">（カテゴリ一覧に無し）</span></div>
+        <div class="brgt"><span class="bamt">${yen(sp)}</span></div>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <select class="finp" data-orphansel="${name}" style="flex:1;padding:5px 8px;font-size:12px">
+          <option value="">統合先のカテゴリを選ぶ...</option>${mergeOpts}
+        </select>
+        <button class="btn bsm" data-orphanmerge="${name}">全履歴を統合</button>
+      </div>
+    </div>`;
+  }).join('');
+
   // 前半後半
   const actCats=S.cats.filter(c=>spentHalf(c.name,true)+spentHalf(c.name,false)>0);
   const halfRows=(first)=>actCats.length?actCats.map(c=>{
@@ -855,7 +882,7 @@ function renderDashboard(){
         <div style="margin-top:6px;font-size:10px;color:var(--text3);font-weight:700">月末締→翌27日 / 翌7日締→翌26日払</div>
       </div>
     </div>
-    <div class="card"><div class="ctitle">🎯 項目別 予算バトル</div>${bars}</div>
+    <div class="card"><div class="ctitle">🎯 項目別 予算バトル</div>${bars}${orphanBars}</div>
     <div class="card"><div class="ctitle">📊 前半・後半 比較</div>
       <div class="hgrid">
         <div class="hcard"><div class="htitle">☀️ 前半（1〜15日）</div>${halfRows(true)}</div>
@@ -868,6 +895,34 @@ function renderDashboard(){
   document.getElementById('CAVATAR').onclick=function(){
     this.classList.remove('pop'); void this.offsetWidth; this.classList.add('pop');
   };
+
+  // 迷子カテゴリの統合ボタン
+  pg.querySelectorAll('[data-orphanmerge]').forEach(btn=>{
+    btn.onclick=()=>{
+      const name=btn.dataset.orphanmerge;
+      const sel=pg.querySelector('select[data-orphansel="'+name+'"]');
+      const target=sel&&sel.value;
+      if(!target){ toast('統合先のカテゴリを選んでください'); return; }
+      if(!confirm('「'+name+'」の支出（全履歴）を「'+target+'」に統合します。よろしいですか？')) return;
+      mergeOrphanCategory(name,target);
+    };
+  });
+}
+
+// 迷子カテゴリ（リネーム等でカテゴリ一覧から消えた名前）の支出を、既存カテゴリへまとめて統合する
+async function mergeOrphanCategory(fromName,toName){
+  const affectedMonths=new Set();
+  let count=0;
+  S.exps.forEach(e=>{
+    if(e.cat===fromName){ e.cat=toName; affectedMonths.add(e.date.substring(0,7)); count++; }
+  });
+  persist();
+  // 影響を受けた月ぶんをまとめてクラウドへ確定保存（当月以外の過去分も反映）
+  for(const ym of affectedMonths){
+    try{ await gasPost({ action:'kakeiboSaveMonth', ym, data: monthDataFromState(ym) }); } catch(e){}
+  }
+  toast('「'+fromName+'」の支出 '+count+'件を「'+toName+'」に統合しました');
+  renderDashboard();
 }
 
 // ─────────────────────────────────────────────
@@ -965,7 +1020,7 @@ function doAddExp(andClose){
   if(!date){toast('日付を入力してください'); return;}
 
   // ★ 支出追加・保存（重複チェック）
-  const newExp={cat,amt,date,memo,card};
+  const newExp={id:Date.now()+'_'+Math.random().toString(36).slice(2,8),cat,amt,date,memo,card};
   const dupKey=date+'|'+cat+'|'+amt+'|'+card+'|'+(memo||'');
   const isDup=S.exps.some(e=>(e.date+'|'+e.cat+'|'+e.amt+'|'+e.card+'|'+(e.memo||''))===dupKey);
   if(isDup){toast('同じ支出がすでに登録されています');return;}
@@ -1130,22 +1185,36 @@ function renderBudget(){
     };
   });
 
-  // カテゴリ追加
+  // カテゴリ追加（ブラウザ標準のprompt()は環境によって動作しないため、アプリ内モーダルで入力する）
   pg.querySelector('#btnAddCat').onclick=()=>{
-    const name=prompt('カテゴリ名を入力してください');
-    if(!name) return;
-    // 現在の入力値を先に保存してから追加
-    if(!S.budgetMap[S.month]) S.budgetMap[S.month]={};
-    pg.querySelectorAll('.bsrow').forEach(row=>{
-      const i=+row.dataset.i;
-      const n=row.querySelector('[data-bn="'+i+'"]').value.trim();
-      const y=parseInt(row.querySelector('[data-by="'+i+'"]').value)||0;
-      if(n) S.cats[i].name=n;
-      S.budgetMap[S.month][S.cats[i].name]=y>0?y:null;
-    });
-    const cols=['#10b981','#6366f1','#f59e0b','#ec4899','#8b5cf6'];
-    S.cats.push({name,e:'📦',pct:0,col:cols[S.cats.length%cols.length],manual:null});
-    renderBudget();
+    openModal(`<div class="mdl">
+      <div class="mtitle">📦 カテゴリを追加</div>
+      <div class="fg"><label class="flbl">カテゴリ名</label>
+        <input type="text" id="NC_name" class="finp" placeholder="例: 旅費"></div>
+      <div class="mfoot">
+        <button class="btn bsm" id="NC_cancel">キャンセル</button>
+        <button class="btn bpri bsm" id="NC_add">✓ 追加する</button>
+      </div>
+    </div>`);
+    document.getElementById('NC_cancel').onclick=closeModal;
+    setTimeout(()=>{ const el=document.getElementById('NC_name'); if(el) el.focus(); },50);
+    document.getElementById('NC_add').onclick=()=>{
+      const name=document.getElementById('NC_name').value.trim();
+      if(!name){ toast('カテゴリ名を入力してください'); return; }
+      closeModal();
+      // 現在の入力値を先に保存してから追加
+      if(!S.budgetMap[S.month]) S.budgetMap[S.month]={};
+      pg.querySelectorAll('.bsrow').forEach(row=>{
+        const i=+row.dataset.i;
+        const n=row.querySelector('[data-bn="'+i+'"]').value.trim();
+        const y=parseInt(row.querySelector('[data-by="'+i+'"]').value)||0;
+        if(n) S.cats[i].name=n;
+        S.budgetMap[S.month][S.cats[i].name]=y>0?y:null;
+      });
+      const cols=['#10b981','#6366f1','#f59e0b','#ec4899','#8b5cf6'];
+      S.cats.push({name,e:'📦',pct:0,col:cols[S.cats.length%cols.length],manual:null});
+      renderBudget();
+    };
   };
 
   // 保存
@@ -1371,14 +1440,10 @@ function renderPaySchedule(container){
   const [yr,mo]=[+ym.split('-')[0],+ym.split('-')[1]];
   const pmo=+pym.split('-')[1]; const nmo=+nym.split('-')[1];
 
-  // 自動集計
-  const amexThisAuto=S.exps.filter(e=>{
-    if(e.card!=='a') return false;
-    const[,em,ed]=e.date.split('-').map(Number);
-    return(em===pmo&&ed>=8)||(em===mo&&ed<=7);
-  }).reduce((s,e)=>s+e.amt,0);
+  // 自動集計（年またぎでも正しく判定できるよう、月番号ではなく年月文字列で比較するgetExpMonthを使用）
+  const amexThisAuto=S.exps.filter(e=>e.card==='a'&&getExpMonth(e)===pym).reduce((s,e)=>s+e.amt,0);
   const rakThisAuto=S.exps.filter(e=>e.card==='r'&&e.date.startsWith(pym)).reduce((s,e)=>s+e.amt,0);
-  const amexNextAuto=S.exps.filter(e=>e.card==='a'&&e.date.startsWith(ym)&&+e.date.split('-')[2]>=8).reduce((s,e)=>s+e.amt,0);
+  const amexNextAuto=S.exps.filter(e=>e.card==='a'&&getExpMonth(e)===ym).reduce((s,e)=>s+e.amt,0);
   const rakNextAuto=S.exps.filter(e=>e.card==='r'&&e.date.startsWith(ym)).reduce((s,e)=>s+e.amt,0);
   // 手入力があればそちらを実際の引き落とし額として使用（自動集計を無視）
   const mp=S.manualPay||{};
@@ -1675,6 +1740,8 @@ function renderLogList(fc,fk,pg){
     btn.onclick=()=>{
       const i=+btn.dataset.delexp;
       if(!confirm('この支出を削除しますか？')) return;
+      const delId=S.exps[i]&&S.exps[i].id;
+      if(delId){ if(!S.deletedExpIds) S.deletedExpIds={}; S.deletedExpIds[delId]=Date.now(); }
       S.exps.splice(i,1); persist(); renderLog();
     };
   });
@@ -1684,7 +1751,11 @@ function renderLogList(fc,fk,pg){
 function openEditExpModal(idx){
   const e=S.exps[idx];
   if(!e) return;
-  const catOpts=S.cats.map(c=>`<option value="${c.name}"${c.name===e.cat?' selected':''}>${c.e} ${c.name}</option>`).join('');
+  // 現在のカテゴリ一覧に無い名前（リネーム等で消えた旧カテゴリ）の場合、
+  // 先頭カテゴリが無言で選択されて保存時に誤って書き換わらないよう、専用の選択肢を用意する
+  const catKnown=S.cats.some(c=>c.name===e.cat);
+  const catOpts=(catKnown?'':`<option value="${e.cat}" selected>❓ ${e.cat}（現在のカテゴリ一覧に無し）</option>`)
+    +S.cats.map(c=>`<option value="${c.name}"${c.name===e.cat?' selected':''}>${c.e} ${c.name}</option>`).join('');
   openModal(`<div class="mdl">
     <div class="mtitle">✏️ 支出を修正</div>
     <div class="frow">
