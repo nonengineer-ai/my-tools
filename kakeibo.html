@@ -567,6 +567,24 @@ const spentHalf=(name,first)=>S.exps.filter(e=>{
   if(e.cat!==name||!e.date.startsWith(S.month))return false;
   const d=+e.date.split('-')[2]; return first?d<=15:d>15;
 }).reduce((s,e)=>s+e.amt,0);
+// AMEXサイクル集計：前月8日〜当月7日を当月度として集計
+const spentAmexCycle=(name,ym)=>{
+  const pym2=prevYM(ym);
+  return S.exps.filter(e=>{
+    if(e.cat!==name||e.card!=='a') return false;
+    const[,em,ed]=e.date.split('-').map(Number);
+    const[py,pm]=pym2.split('-').map(Number);
+    const[cy,cm]=ym.split('-').map(Number);
+    return(e.date.startsWith(pym2)&&ed>=8)||(e.date.startsWith(ym)&&ed<=7);
+  }).reduce((s,e)=>s+e.amt,0);
+};
+// 後営業日を返す（土→月、日→月、祝→翌平日）
+// 簡易版：土日のみ対応（祝日APIなしのため）
+const nextBusinessDay=(ym,day)=>{
+  const d=new Date(ym+'-'+String(day).padStart(2,'0'));
+  while(d.getDay()===0||d.getDay()===6){ d.setDate(d.getDate()+1); }
+  return d.getDate();
+};
 const bcolor=(p,base)=>p>=90?'#ef4444':p>=70?'#f59e0b':base;
 const rnd=a=>a[Math.floor(Math.random()*a.length)];
 const lastDay=ym=>{const d=new Date(ym+'-01');d.setMonth(d.getMonth()+1);d.setDate(0);return d.getDate();};
@@ -736,6 +754,7 @@ function renderDashboard(){
   const alerts=S.cats.map(c=>{
     if(ALERT_EXCLUDE.includes(c.name)) return '';
     const b=budget(c); const sp=spent(c.name);
+    // ※このspはAMEX以外のカードも含む全支出（カードサイクル対応は予算バトルの合計欄では未適用）
     const p=b>0?Math.round(sp/b*100):0;
     return p>=90?`<div class="abanner">⚠️ ${c.e} ${c.name}の予算が${p}%に達しています${sp>b?'（超過！）':''}。</div>`:'';
   }).join('');
@@ -747,7 +766,10 @@ function renderDashboard(){
   // 予算バー
   const bars=S.cats.map(c=>{
     const b=budget(c);
-    const expOnly=spent(c.name);
+    // AMEX分はサイクル集計（前月8日〜当月7日）、それ以外は日付月で集計
+    const expAmex=spentAmexCycle(c.name,S.month);
+    const expOther=S.exps.filter(e=>e.cat===c.name&&e.card!=='a'&&e.date.startsWith(S.month)).reduce((s,e)=>s+e.amt,0);
+    const expOnly=expAmex+expOther;
     // 紐付き固定引き落とし済み分を加算
     const dedForCat=activeDeds.filter(d=>d.cat===c.name).reduce((s,d)=>s+d.amt,0);
     const sp=expOnly+dedForCat;
@@ -1376,10 +1398,10 @@ function renderPaySchedule(container){
 
   let evs=[
     {mo,day:15,col:'var(--accent)',ico:'💴',name:'給与入金',desc:'前月分給与（今月の生活費）',amt:getIncome(),plus:true},
-    {mo,day:26,col:'var(--amex)',ico:'💳',name:'アメックス引き落とし',desc:`${pmo}月8日〜${mo}月7日の利用分`,amt:amexThis,plus:false},
-    {mo,day:27,col:'var(--rakuten)',ico:'💳',name:'楽天カード引き落とし',desc:`${pmo}月1〜末日の利用分`,amt:rakThis,plus:false},
-    {mo:nmo,day:26,col:'var(--amex)',ico:'💳',name:`アメックス（${nmo}月）`,desc:`${mo}月8日〜${nmo}月7日（見込み）`,amt:amexNext,plus:false,note:true},
-    {mo:nmo,day:27,col:'var(--rakuten)',ico:'💳',name:`楽天（${nmo}月）`,desc:`${mo}月1〜末日（見込み）`,amt:rakNext,plus:false,note:true},
+    {mo,day:nextBusinessDay(ym,26),col:'var(--amex)',ico:'💳',name:'アメックス引き落とし',desc:`${pmo}月8日〜${mo}月7日の利用分`,amt:amexThis,plus:false},
+    {mo,day:nextBusinessDay(ym,27),col:'var(--rakuten)',ico:'💳',name:'楽天カード引き落とし',desc:`${pmo}月1〜末日の利用分`,amt:rakThis,plus:false},
+    {mo:nmo,day:nextBusinessDay(nym,26),col:'var(--amex)',ico:'💳',name:`アメックス（${nmo}月）`,desc:`${mo}月8日〜${nmo}月7日（見込み）`,amt:amexNext,plus:false,note:true},
+    {mo:nmo,day:nextBusinessDay(nym,27),col:'var(--rakuten)',ico:'💳',name:`楽天（${nmo}月）`,desc:`${mo}月1〜末日（見込み）`,amt:rakNext,plus:false,note:true},
   ];
   (S.deds||[]).filter(d=>d.on).forEach(d=>{
     const c=d.type==='bank'?'#8b5cf6':d.type==='a'?'var(--amex)':'var(--rakuten)';
