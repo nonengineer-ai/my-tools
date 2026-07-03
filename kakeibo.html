@@ -716,11 +716,20 @@ function getAvatar(){
 function renderDashboard(){
   const pg=document.getElementById('page-dashboard');
 
+  const pym2=prevYM(S.month);
+  // AMEX：前月8日〜当月7日のサイクルで集計
+  const amxSp=S.exps.filter(e=>{
+    if(e.card!=='a') return false;
+    const[,em,ed]=e.date.split('-').map(Number);
+    const[,pym2m]=pym2.split('-').map(Number);
+    const[,curm]=S.month.split('-').map(Number);
+    return(e.date.startsWith(pym2)&&ed>=8)||(e.date.startsWith(S.month)&&ed<=7);
+  }).reduce((s,e)=>s+e.amt,0);
+  // 楽天・現金：当月日付で集計
   const mes=S.exps.filter(e=>e.date.startsWith(S.month));
-  const expSp=mes.reduce((s,e)=>s+e.amt,0);
   const rakSp=mes.filter(e=>e.card==='r').reduce((s,e)=>s+e.amt,0);
-  const amxSp=mes.filter(e=>e.card==='a').reduce((s,e)=>s+e.amt,0);
   const cshSp=mes.filter(e=>e.card==='c').reduce((s,e)=>s+e.amt,0);
+  const expSp=amxSp+rakSp+cshSp;
 
   // 固定引き落とし：ONかつ当月の引き落とし日が今日以前のものだけ加算
   const _today=new Date();
