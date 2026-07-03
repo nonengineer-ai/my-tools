@@ -552,6 +552,16 @@ if(!S.budgetMap[S.month]){
   S.budgetMap[S.month]={};
   S.cats.forEach(c=>{ S.budgetMap[S.month][c.name]=c.manual; });
 }
+// 重複データ自動除去（日付・カテゴリ・金額・カード・メモが同じものを1件に）
+(function(){
+  const seen=new Set();
+  S.exps=S.exps.filter(e=>{
+    const key=e.date+'|'+e.cat+'|'+e.amt+'|'+e.card+'|'+(e.memo||'');
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+})();
 // 月別予算を取得（その月の設定があればそれを使用、なければカテゴリのデフォルトmanual値）
 const getBudgetManual=c=>{
   const mb=S.budgetMap[S.month];
