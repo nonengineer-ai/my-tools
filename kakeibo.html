@@ -41,6 +41,7 @@ body{font-family:'Hiragino Sans','Yu Gothic UI',sans-serif;background:var(--bg);
 .mo-lbl{font-size:14px;font-weight:800;min-width:82px;text-align:center;color:var(--accent)}
 .ibtn{width:32px;height:32px;border-radius:8px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px}
 .ibtn:hover{background:var(--accent-light);border-color:var(--accent)}
+.ibtn:disabled{opacity:.3;cursor:not-allowed;pointer-events:none}
 /* LAYOUT */
 .layout{display:flex;max-width:1080px;margin:0 auto}
 .sidebar{width:184px;flex-shrink:0;padding:14px 10px;position:sticky;top:56px;height:calc(100vh - 56px);overflow-y:auto}
@@ -683,11 +684,14 @@ document.getElementById('btnTheme').onclick=()=>{S.theme=S.theme==='dark'?'light
 // ─────────────────────────────────────────────
 // MONTH NAV
 // ─────────────────────────────────────────────
+const START_MONTH='2026-05'; // 利用開始月：これより前には移動できない
 function setMonthLabel(){
   const d=new Date(S.month+'-01');
   document.getElementById('moLabel').textContent=`${d.getFullYear()}年${d.getMonth()+1}月`;
+  document.getElementById('btnPrevMonth').disabled = (S.month<=START_MONTH);
 }
 document.getElementById('btnPrevMonth').onclick=async ()=>{
+  if(S.month<=START_MONTH) return; // 利用開始月より前には行かせない
   S.month=prevYM(S.month);setMonthLabel();
   renderCurrent(); // ローカルデータで即表示
   cloudLoadMonth(S.month).then(()=>renderCurrent()); // バックグラウンドで同期後に再描画
