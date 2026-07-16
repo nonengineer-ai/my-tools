@@ -414,7 +414,7 @@ async function cloudLoad(silent=false) {
       S.income    = winner.income ?? loser.income ?? S.income;
       // 月別収入・月別予算：キー（年月）単位で統合し、新しい方の値を優先。古い方にしかない月は保持。
       S.incomeMap = { ...(loser.incomeMap||{}), ...(winner.incomeMap||{}) };
-      S.budgetMap = { ...(loser.budgetMap||{}), ...(winner.budgetMap||{}) };
+      S.budgetMap = mergeBudgetMap(winner.budgetMap, loser.budgetMap);
       // カテゴリ・固定費：名前／IDで統合し、片方にしかない項目（例：家賃カテゴリ）を消さない
       S.cats      = mergeByKey(winner.cats, loser.cats, c=>c.name);
       S.deds      = mergeByKey(winner.deds, loser.deds, d=>d.id);
@@ -569,6 +569,17 @@ if(!S.budgetMap[S.month]){
     // なければcats.manual値を使用
     S.cats.forEach(c=>{ S.budgetMap[S.month][c.name]=c.manual; });
   }
+}
+// budgetMapは「月→カテゴリ名→金額」の入れ子構造。月の階層だけをマージすると、
+// 月の中身（カテゴリごとの金額）が新しい方でまるごと入れ替わり、片方にしかない
+// カテゴリの予算額が消えてしまう。そのため月の中身まで1段階深くマージする。
+function mergeBudgetMap(winnerBM, loserBM){
+  const result={};
+  const months=new Set([...Object.keys(loserBM||{}), ...Object.keys(winnerBM||{})]);
+  months.forEach(mo=>{
+    result[mo] = { ...((loserBM&&loserBM[mo])||{}), ...((winnerBM&&winnerBM[mo])||{}) };
+  });
+  return result;
 }
 // 配列を「新しい方の内容を優先しつつ、古い方にしかない項目も残す」形で統合する
 // （片方の端末にしかないカテゴリ／固定費が同期で消えるのを防ぐ）
