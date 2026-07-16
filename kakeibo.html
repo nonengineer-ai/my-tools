@@ -397,28 +397,37 @@ async function cloudLoad(silent=false) {
   try {
     if (!silent) showSyncStatus('loading');
 
-    // 設定の同期（settingsUpdatedAtが新しい方を採用。コイン数などの件数では判定しない）
+    // 設定の同期（settingsUpdatedAtが新しい方を優先しつつ、古い方にしかない
+    // カテゴリ・月別予算・月別収入・獲得アイテムは消さずに統合する。
+    // ※「支出を1件記録しただけ」でもsettingsUpdatedAtは更新されるため、
+    // 　丸ごと上書きすると別端末の予算設定が消える事故が起きる。それを防ぐためのマージ。
     const sr = await gasGet({ action: 'kakeiboLoadSettings' });
     if (sr.status === 'ok' && sr.data) {
       const cloud = sr.data;
+      const local = settingsFromState();
       const localUpdatedAt = S.settingsUpdatedAt || 0;
       const cloudUpdatedAt = cloud.updatedAt || 0;
-      if (cloudUpdatedAt > localUpdatedAt) {
-        S.income   = cloud.income   ?? S.income;
-        S.incomeMap= cloud.incomeMap?? S.incomeMap;
-        S.budgetMap= cloud.budgetMap?? S.budgetMap;
-        S.cats     = cloud.cats     ?? S.cats;
-        S.deds     = cloud.deds     ?? S.deds;
-        S.assets   = cloud.assets   ?? S.assets;
-        S.coins    = cloud.coins    ?? S.coins;
-        S.records  = cloud.records  ?? S.records;
-        S.gotItems = cloud.gotItems ?? S.gotItems;
-        S.theme    = cloud.theme    ?? S.theme;
-        S.settingsUpdatedAt = cloudUpdatedAt;
-      } else {
-        // ローカルが新しい → クラウドへ保存
-        await gasPost({ action: 'kakeiboSaveSettings', data: settingsFromState() });
-      }
+      const cloudIsNewer = cloudUpdatedAt > localUpdatedAt;
+      const winner = cloudIsNewer ? cloud : local;
+      const loser  = cloudIsNewer ? local : cloud;
+
+      S.income    = winner.income ?? loser.income ?? S.income;
+      // 月別収入・月別予算：キー（年月）単位で統合し、新しい方の値を優先。古い方にしかない月は保持。
+      S.incomeMap = { ...(loser.incomeMap||{}), ...(winner.incomeMap||{}) };
+      S.budgetMap = { ...(loser.budgetMap||{}), ...(winner.budgetMap||{}) };
+      // カテゴリ・固定費：名前／IDで統合し、片方にしかない項目（例：家賃カテゴリ）を消さない
+      S.cats      = mergeByKey(winner.cats, loser.cats, c=>c.name);
+      S.deds      = mergeByKey(winner.deds, loser.deds, d=>d.id);
+      S.assets    = winner.assets ?? loser.assets ?? S.assets;
+      S.coins     = Math.max(winner.coins||0, loser.coins||0);
+      S.records   = Math.max(winner.records||0, loser.records||0);
+      S.gotItems  = { ...(loser.gotItems||{}), ...(winner.gotItems||{}) };
+      S.theme     = winner.theme ?? S.theme;
+      S.settingsUpdatedAt = Math.max(cloudUpdatedAt, localUpdatedAt);
+
+      // 統合結果をクラウドへ書き戻す（次回以降どちらの端末から見ても同じ状態になる）
+      await gasPost({ action: 'kakeiboSaveSettings', data: settingsFromState() });
+
       // 削除済みID一覧はどちらが新しいかに関わらず両方の記録を統合（削除の取りこぼし防止）
       const mergedTomb = { ...(cloud.deletedExpIds||{}) };
       Object.entries(S.deletedExpIds||{}).forEach(([id,t])=>{ mergedTomb[id]=Math.max(mergedTomb[id]||0, t); });
@@ -560,6 +569,14 @@ if(!S.budgetMap[S.month]){
     // なければcats.manual値を使用
     S.cats.forEach(c=>{ S.budgetMap[S.month][c.name]=c.manual; });
   }
+}
+// 配列を「新しい方の内容を優先しつつ、古い方にしかない項目も残す」形で統合する
+// （片方の端末にしかないカテゴリ／固定費が同期で消えるのを防ぐ）
+function mergeByKey(winnerArr, loserArr, keyFn){
+  const map=new Map();
+  (loserArr||[]).forEach(item=>map.set(keyFn(item), item));
+  (winnerArr||[]).forEach(item=>map.set(keyFn(item), item)); // 同じキーは新しい方で上書き
+  return Array.from(map.values());
 }
 // 重複除去関数（共通）
 // idがある支出はidで判定（同内容の別支出を誤って1件にまとめない）。idが無い古いデータのみ内容ベースで判定
@@ -780,8 +797,8 @@ function renderDashboard(){
   const items=Object.entries(S.gotItems||{}).filter(([,v])=>v>0);
   const msgs=remain<0?['来月取り返そう💪']:usePct>=80?['予算を意識しよう💡']:['今日も記録してえらい！✨','コツコツが一番！','記録習慣ついてきた！'];
 
-  // アラート（貯蓄・投資カテゴリは資産扱いのため除外）
-  const ALERT_EXCLUDE=['貯蓄・投資','税金'];
+  // アラート（貯蓄・投資は資産扱い、税金・家賃は固定で必ず払うものなので除外）
+  const ALERT_EXCLUDE=['貯蓄・投資','税金','家賃'];
   const alerts=S.cats.map(c=>{
     if(ALERT_EXCLUDE.includes(c.name)) return '';
     const b=budget(c); const sp=spent(c.name);
