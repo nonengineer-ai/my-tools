@@ -258,6 +258,7 @@ input[type=number].finp::-webkit-inner-spin-button{-webkit-appearance:none;margi
     </div>
     <span id="SYNC_STATUS" style="font-size:11px;font-weight:700;white-space:nowrap"></span>
     <button class="ibtn" id="btnCloudLoad" title="クラウドから読込">☁️</button>
+    <button class="ibtn" id="btnBackup" title="バックアップ">💾</button>
     <button class="ibtn" id="btnTheme">🌙</button>
     <button class="btn bpri bsm" id="btnAddExp">＋ 記録する</button>
   </div>
@@ -349,6 +350,7 @@ function settingsFromState() {
     gotItems: S.gotItems,
     theme:  S.theme,
     deletedExpIds: S.deletedExpIds||{},
+    sectionTimes: S.sectionTimes||{},  // 項目ごとの更新時刻（予算だけ・資産だけ等、変えた項目だけを新しい扱いにする）
     updatedAt: Date.now(),
   };
 }
@@ -378,20 +380,59 @@ function gasPost(body) {
   }).then(r => r.json());
 }
 
-// クラウドへ保存（設定＋当月データ）
-async function cloudSave() {
+// ─────────────────────────────────────────────
+// クラウド保存キュー
+// 従来は保存のたびに即送信していたため、連続記録時に「古い送信が新しい送信を
+// 追い越して上書きする」事故が起きていた。ここでは保存を1本の待ち行列に並べ、
+// 失敗したら自動で再送する。最終的に失敗した分は「未保存」として保持し、
+// 次の保存時に一緒に再送する（無言でデータが消えない）。
+// ─────────────────────────────────────────────
+let _saveChain = Promise.resolve();   // 保存の順番待ち（追い越し防止）
+let _dirtySettings = false;           // 設定に未保存の変更があるか
+let _dirtyMonths = new Set();         // 未保存の変更がある月の一覧
+
+// 失敗時に自動リトライするPOST（計3回、間隔を空けて再送）
+function gasPostRetry(body, tries) {
+  tries = tries || 3;
+  return gasPost(body).catch(err => {
+    if (tries <= 1) throw err;
+    return new Promise(res => setTimeout(res, 2500)).then(() => gasPostRetry(body, tries - 1));
+  });
+}
+
+// 保存をキューに積む（months: 変更があった月の配列。省略時は表示中の月）
+function queueCloudSave(months) {
+  _dirtySettings = true;
+  (months || [S.month]).forEach(m => { if (m) _dirtyMonths.add(m); });
+  _saveChain = _saveChain.then(runCloudSave).catch(() => {});
+}
+
+async function runCloudSave() {
+  if (!_dirtySettings && _dirtyMonths.size === 0) return;
+  const months = [..._dirtyMonths];
+  const doSettings = _dirtySettings;
+  _dirtyMonths.clear();
+  _dirtySettings = false;
   try {
     showSyncStatus('saving');
-    // 設定保存
-    await gasPost({ action: 'kakeiboSaveSettings', data: settingsFromState() });
-    // 当月データ保存
-    await gasPost({ action: 'kakeiboSaveMonth', ym: S.month, data: monthDataFromState(S.month) });
+    if (doSettings) await gasPostRetry({ action: 'kakeiboSaveSettings', data: settingsFromState() });
+    for (const ym of months) {
+      await gasPostRetry({ action: 'kakeiboSaveMonth', ym, data: monthDataFromState(ym) });
+    }
     showSyncStatus('saved');
   } catch(e) {
-    showSyncStatus('error');
+    // 失敗した分を「未保存」に戻す → 次回の保存時に自動で一緒に再送される
+    if (doSettings) _dirtySettings = true;
+    months.forEach(m => _dirtyMonths.add(m));
+    showSyncStatus('unsaved');
     console.error('cloudSave error:', e);
   }
 }
+
+// 未保存の変更があるままページを閉じようとしたら警告
+window.addEventListener('beforeunload', function(e) {
+  if (_dirtySettings || _dirtyMonths.size > 0) { e.preventDefault(); e.returnValue = ''; }
+});
 
 // クラウドから読込（設定は更新時刻(updatedAt)が新しい方を優先）
 async function cloudLoad(silent=false) {
@@ -402,37 +443,56 @@ async function cloudLoad(silent=false) {
     // カテゴリ・月別予算・月別収入・獲得アイテムは消さずに統合する。
     // ※「支出を1件記録しただけ」でもsettingsUpdatedAtは更新されるため、
     // 　丸ごと上書きすると別端末の予算設定が消える事故が起きる。それを防ぐためのマージ。
+    // ★★ 項目ごとに新旧を判定するマージ ★★
+    // 従来は設定全体を1つの更新時刻で比較していたため、
+    // 「スマホで支出を1件記録」→ スマホの設定全体が"最新"扱い
+    // → 中に入っていた古い予算・資産がPCの新しい設定を上書き、という事故が起きた。
+    // ここでは予算・資産・カテゴリ等を"それぞれの更新時刻"で個別に比較する。
     const sr = await gasGet({ action: 'kakeiboLoadSettings' });
     if (sr.status === 'ok' && sr.data) {
       const cloud = sr.data;
-      const local = settingsFromState();
-      const localUpdatedAt = S.settingsUpdatedAt || 0;
-      const cloudUpdatedAt = cloud.updatedAt || 0;
-      const cloudIsNewer = cloudUpdatedAt > localUpdatedAt;
-      const winner = cloudIsNewer ? cloud : local;
-      const loser  = cloudIsNewer ? local : cloud;
+      const cT = cloud.sectionTimes || {};
+      const lT = S.sectionTimes || {};
+      const cAll = cloud.updatedAt || 0;         // 旧形式データ用の代替時刻
+      const lAll = S.settingsUpdatedAt || 0;
+      // その項目についてクラウドの方が新しいか？（項目別時刻が無い旧データは全体時刻で代用）
+      const cloudNewer = key => ((cT[key] != null ? cT[key] : cAll) > (lT[key] != null ? lT[key] : lAll));
+      // マージ後の項目別時刻 = 両者の新しい方
+      const mT = {};
+      ['income','budgetMap','cats','deds','assets','theme'].forEach(k => {
+        mT[k] = Math.max(cT[k] != null ? cT[k] : cAll, lT[k] != null ? lT[k] : lAll);
+      });
 
-      S.income    = winner.income ?? loser.income ?? S.income;
-      // 月別収入・月別予算：キー（年月）単位で統合し、新しい方の値を優先。古い方にしかない月は保持。
-      S.incomeMap = { ...(loser.incomeMap||{}), ...(winner.incomeMap||{}) };
-      S.budgetMap = mergeBudgetMap(winner.budgetMap, loser.budgetMap);
-      // カテゴリ・固定費：名前／IDで統合し、片方にしかない項目（例：家賃カテゴリ）を消さない
-      S.cats      = mergeByKey(winner.cats, loser.cats, c=>c.name);
-      S.deds      = mergeByKey(winner.deds, loser.deds, d=>d.id);
-      S.assets    = winner.assets ?? loser.assets ?? S.assets;
-      S.coins     = Math.max(winner.coins||0, loser.coins||0);
-      S.records   = Math.max(winner.records||0, loser.records||0);
-      S.gotItems  = { ...(loser.gotItems||{}), ...(winner.gotItems||{}) };
-      S.theme     = winner.theme ?? S.theme;
-      S.settingsUpdatedAt = Math.max(cloudUpdatedAt, localUpdatedAt);
-
-      // 統合結果をクラウドへ書き戻す（次回以降どちらの端末から見ても同じ状態になる）
-      await gasPost({ action: 'kakeiboSaveSettings', data: settingsFromState() });
+      // 収入（月別マップは月単位で統合しつつ、同じ月は新しい方を優先）
+      if (cloudNewer('income') && cloud.income != null) S.income = cloud.income;
+      S.incomeMap = cloudNewer('income')
+        ? { ...(S.incomeMap||{}), ...(cloud.incomeMap||{}) }
+        : { ...(cloud.incomeMap||{}), ...(S.incomeMap||{}) };
+      // 月別予算（月の中身まで統合。片方にしかない月・カテゴリは残す）
+      S.budgetMap = cloudNewer('budgetMap')
+        ? mergeBudgetMap(cloud.budgetMap, S.budgetMap)
+        : mergeBudgetMap(S.budgetMap, cloud.budgetMap);
+      // カテゴリ・固定費（片方にしかない項目は残す）
+      S.cats = cloudNewer('cats') ? mergeByKey(cloud.cats, S.cats, c=>c.name) : mergeByKey(S.cats, cloud.cats, c=>c.name);
+      S.deds = cloudNewer('deds') ? mergeByKey(cloud.deds, S.deds, d=>d.id) : mergeByKey(S.deds, cloud.deds, d=>d.id);
+      // 資産：従来はマージ処理が無く丸ごと入れ替えだった（＝リセット事故の原因）。
+      // 資産を最後に更新した側の値だけを採用する。
+      if (cloudNewer('assets') && cloud.assets) S.assets = cloud.assets;
+      // コイン・記録数・アイテムは減らない値なので常に多い方を採用
+      S.coins    = Math.max(cloud.coins||0, S.coins||0);
+      S.records  = Math.max(cloud.records||0, S.records||0);
+      S.gotItems = { ...(cloud.gotItems||{}), ...(S.gotItems||{}) };
+      if (cloudNewer('theme') && cloud.theme != null) S.theme = cloud.theme;
+      S.sectionTimes = mT;
+      S.settingsUpdatedAt = Math.max(cAll, lAll);
 
       // 削除済みID一覧はどちらが新しいかに関わらず両方の記録を統合（削除の取りこぼし防止）
       const mergedTomb = { ...(cloud.deletedExpIds||{}) };
       Object.entries(S.deletedExpIds||{}).forEach(([id,t])=>{ mergedTomb[id]=Math.max(mergedTomb[id]||0, t); });
       S.deletedExpIds = mergedTomb;
+
+      // 統合結果をクラウドへ書き戻す（次回以降どちらの端末から見ても同じ状態になる）
+      await gasPostRetry({ action: 'kakeiboSaveSettings', data: settingsFromState() });
     }
 
     // 当月データの同期（ローカル・クラウドをマージし、削除済みIDは復活させない）
@@ -448,9 +508,9 @@ async function cloudLoad(silent=false) {
         ]).filter(e => !S.deletedExpIds[e.id])
       ];
       Object.assign(S.manualPay, cloud.manualPay||{});
-      await gasPost({ action: 'kakeiboSaveMonth', ym: S.month, data: monthDataFromState(S.month) });
+      await gasPostRetry({ action: 'kakeiboSaveMonth', ym: S.month, data: monthDataFromState(S.month) });
     }
-    persist();
+    persistLocal();  // 同期結果を端末に保存（ここではクラウド再送信はしない）
     if (!silent) { showSyncStatus('loaded'); applyTheme(); setMonthLabel(); buildNav(); renderCurrent(); }
     else showSyncStatus('synced');
   } catch(e) {
@@ -478,8 +538,8 @@ async function cloudLoadMonth(ym) {
       Object.assign(S.manualPay, cloud.manualPay||{});
       // マージ結果を先にクラウドへ確定保存してから、ローカルの持ち回り保存を行う
       // （順序を逆にすると、直後の背景保存と競合して古いデータで上書きされる恐れがあるため）
-      await gasPost({ action: 'kakeiboSaveMonth', ym, data: monthDataFromState(ym) });
-      persist();
+      await gasPostRetry({ action: 'kakeiboSaveMonth', ym, data: monthDataFromState(ym) });
+      persistLocal();
     }
     showSyncStatus('synced');
   } catch(e) {
@@ -498,6 +558,7 @@ function showSyncStatus(status) {
     loaded:  { text: '✅ 読込完了',  color: 'var(--green)' },
     synced:  { text: '☁️ 同期済み',  color: 'var(--text3)' },
     error:   { text: '❌ 通信エラー', color: 'var(--red)'  },
+    unsaved: { text: '⚠️ 未保存あり（自動で再送します）', color: 'var(--red)' },
   };
   const m = map[status] || {};
   el.textContent = m.text || '';
@@ -538,15 +599,26 @@ let S;
 try{ S=JSON.parse(localStorage.getItem('kakeibo7')||'null')||defaultState(); }
 catch(e){ S=defaultState(); }
 if(!S.deletedExpIds) S.deletedExpIds={};
+if(!S.sectionTimes) S.sectionTimes={};  // 項目ごとの更新時刻（旧データからの移行）
 
-function persist(){
-  // 保存時刻を記録（競合防止）
+// 保存関数
+// sections: 今回変更した設定項目の名前（'assets','budgetMap','cats','deds','income','theme'）
+//           → その項目の更新時刻だけを進める。こうすることで、
+//             「支出を記録しただけなのに予算や資産まで"最新"扱いになり、
+//              別端末の新しい設定を古い値で上書きする」事故を防ぐ。
+// months:   支出等に変更があった月の配列（省略時は表示中の月）
+function persist(sections, months){
   const now = Date.now();
-  S.settingsUpdatedAt = now;
-  S['monthUpdatedAt_' + S.month] = now;
+  if(!S.sectionTimes) S.sectionTimes={};
+  (sections||[]).forEach(s=>{ S.sectionTimes[s]=now; });
+  S.settingsUpdatedAt = now;  // 旧形式との互換のため残す
   try{ localStorage.setItem('kakeibo7', JSON.stringify(S)); } catch(e) {}
-  // クラウドへも保存
-  if(typeof cloudSave === 'function') cloudSave().catch(()=>{});
+  queueCloudSave(months);
+}
+
+// 端末内にだけ保存（同期処理の内部用。クラウド送信や時刻更新はしない）
+function persistLocal(){
+  try{ localStorage.setItem('kakeibo7', JSON.stringify(S)); } catch(e) {}
 }
 
 // ─────────────────────────────────────────────
@@ -679,7 +751,7 @@ function applyTheme(){
   document.documentElement.setAttribute('data-theme',S.theme);
   document.getElementById('btnTheme').textContent=S.theme==='dark'?'☀️':'🌙';
 }
-document.getElementById('btnTheme').onclick=()=>{S.theme=S.theme==='dark'?'light':'dark';applyTheme();persist();};
+document.getElementById('btnTheme').onclick=()=>{S.theme=S.theme==='dark'?'light':'dark';applyTheme();persist(['theme']);};
 
 // ─────────────────────────────────────────────
 // MONTH NAV
@@ -948,11 +1020,8 @@ async function mergeOrphanCategory(fromName,toName){
   S.exps.forEach(e=>{
     if(e.cat===fromName){ e.cat=toName; affectedMonths.add(e.date.substring(0,7)); count++; }
   });
-  persist();
-  // 影響を受けた月ぶんをまとめてクラウドへ確定保存（当月以外の過去分も反映）
-  for(const ym of affectedMonths){
-    try{ await gasPost({ action:'kakeiboSaveMonth', ym, data: monthDataFromState(ym) }); } catch(e){}
-  }
+  // 影響を受けた全ての月をまとめて保存キューへ（当月以外の過去分も確実に反映）
+  persist([], [...affectedMonths]);
   toast('「'+fromName+'」の支出 '+count+'件を「'+toName+'」に統合しました');
   renderDashboard();
 }
@@ -985,7 +1054,7 @@ function openIncomeModal(){
       S.incomeMap[S.month]=v;
       // S.incomeは上書きしない（他の月に影響するため）
     }
-    persist(); closeModal(); setMonthLabel(); renderCurrent();
+    persist(['income']); closeModal(); setMonthLabel(); renderCurrent();
   };
 }
 
@@ -1072,7 +1141,8 @@ function doAddExp(andClose){
     }
   });
 
-  persist();
+  // 支出の"日付が属する月"を保存対象にする（表示中の月と違う月の日付でも確実にクラウドへ送る）
+  persist([], [date.substring(0,7)]);
 
   // ダッシュボードのみ即反映
   if(curPage==='dashboard') renderDashboard();
@@ -1260,7 +1330,7 @@ function renderBudget(){
       // 金額は当月のbudgetMapにのみ保存（他の月に影響しない）
       S.budgetMap[S.month][S.cats[i].name]=y>0?y:null;
     });
-    persist();
+    persist(['cats','budgetMap']);
     toast('予算を保存したよ！🎯');
     curPage='dashboard'; buildNav(); renderCurrent();
   };
@@ -1435,7 +1505,7 @@ function openInvestModal(){
       const el=document.getElementById('IINP_'+def.key);
       if(el) S.assets[def.key]=parseInt(el.value)||0;
     });
-    persist();
+    persist(['assets']);
     closeModal();
     toast('資産情報を保存しました！📈');
     renderInvest();
@@ -1575,7 +1645,7 @@ function renderPaySchedule(container){
           else delete S.manualPay[ym+'_'+k];
         }
       });
-      persist();
+      persist([], [ym]);
       toast('引き落とし情報を保存しました！');
       renderPayments();
     };
@@ -1606,7 +1676,7 @@ function renderDedList(container){
 
   document.getElementById('btnAddDed').onclick=()=>openDedModal(null);
   container.querySelectorAll('[data-dedtog]').forEach(el=>{
-    el.onchange=()=>{ const i=+el.dataset.dedtog; S.deds[i].on=!S.deds[i].on; persist(); renderPayments(); };
+    el.onchange=()=>{ const i=+el.dataset.dedtog; S.deds[i].on=!S.deds[i].on; persist(['deds']); renderPayments(); };
   });
   container.querySelectorAll('[data-dededit]').forEach(el=>{
     el.onclick=()=>openDedModal(S.deds[+el.dataset.dededit]);
@@ -1615,7 +1685,7 @@ function renderDedList(container){
     el.onclick=()=>{
       const i=+el.dataset.deddel;
       if(!confirm('「'+S.deds[i].name+'」を削除しますか？')) return;
-      S.deds.splice(i,1); persist(); renderPayments();
+      S.deds.splice(i,1); persist(['deds']); renderPayments();
     };
   });
 }
@@ -1700,7 +1770,7 @@ function openDedModal(d){
       if(!S.deds) S.deds=[];
       S.deds.push({id:Date.now(),name,day,type,amt,cat,memo,on:true});
     }
-    persist(); closeModal(); toast('固定引き落としを登録しました🏦'); renderPayments();
+    persist(['deds']); closeModal(); toast('固定引き落としを登録しました🏦'); renderPayments();
   };
 }
 
@@ -1773,8 +1843,9 @@ function renderLogList(fc,fk,pg){
       const i=+btn.dataset.delexp;
       if(!confirm('この支出を削除しますか？')) return;
       const delId=S.exps[i]&&S.exps[i].id;
+      const delYm=S.exps[i]&&S.exps[i].date.substring(0,7);
       if(delId){ if(!S.deletedExpIds) S.deletedExpIds={}; S.deletedExpIds[delId]=Date.now(); }
-      S.exps.splice(i,1); persist(); renderLog();
+      S.exps.splice(i,1); persist([], delYm?[delYm]:undefined); renderLog();
     };
   });
 }
@@ -1820,6 +1891,7 @@ function openEditExpModal(idx){
     const date=document.getElementById('EE_date').value;
     if(amt<=0){toast('金額を入力してください');return;}
     if(!date){toast('日付を入力してください');return;}
+    const oldYm=S.exps[idx].date.substring(0,7);
     S.exps[idx]={
       ...S.exps[idx],
       cat:  document.getElementById('EE_cat').value,
@@ -1828,7 +1900,8 @@ function openEditExpModal(idx){
       date,
       memo: document.getElementById('EE_memo').value.trim(),
     };
-    persist();
+    // 日付を別の月に変えた場合、元の月と新しい月の両方を保存する
+    persist([], [...new Set([oldYm, date.substring(0,7)])]);
     closeModal();
     toast('支出を修正しました！');
     renderLog();
@@ -1837,10 +1910,81 @@ function openEditExpModal(idx){
 }
 
 // ─────────────────────────────────────────────
+// BACKUP（書き出し・復元）
+// クラウドや端末のデータが万一壊れても、このファイルさえあれば全て復元できる。
+// ─────────────────────────────────────────────
+function openBackupModal(){
+  openModal(`<div class="mdl">
+    <div class="mtitle">💾 バックアップ</div>
+    <p style="font-size:12px;color:var(--text2);font-weight:700;line-height:1.8;margin-bottom:14px">
+      この端末にある全データ（支出・予算・資産・固定費・設定）を1つのファイルとして保存できます。<br>
+      <strong>月に1回の書き出しがおすすめ</strong>です。万一データが消えても、ファイルから完全に復元できます。
+    </p>
+    <div class="fg">
+      <button class="btn bpri" id="BK_export" style="width:100%;justify-content:center">📤 バックアップファイルを書き出す</button>
+    </div>
+    <div class="fg">
+      <button class="btn" id="BK_importBtn" style="width:100%;justify-content:center">📥 ファイルから復元する</button>
+      <input type="file" id="BK_file" accept=".json,application/json" style="display:none">
+      <div style="font-size:10px;color:var(--text2);font-weight:700;margin-top:5px">※ 復元するとこの端末のデータはファイルの内容で置き換わります</div>
+    </div>
+    <div class="mfoot"><button class="btn bsm" id="BK_close">閉じる</button></div>
+  </div>`);
+
+  document.getElementById('BK_close').onclick=closeModal;
+
+  // 書き出し
+  document.getElementById('BK_export').onclick=function(){
+    try{
+      const d=new Date();
+      const stamp=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download='kakeibo-backup-'+stamp+'.json';
+      document.body.appendChild(a); a.click();
+      setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);
+      toast('バックアップを書き出しました💾');
+    }catch(e){ toast('書き出しに失敗しました'); }
+  };
+
+  // 復元
+  document.getElementById('BK_importBtn').onclick=()=>document.getElementById('BK_file').click();
+  document.getElementById('BK_file').onchange=function(){
+    const f=this.files&&this.files[0];
+    if(!f) return;
+    const reader=new FileReader();
+    reader.onload=function(){
+      try{
+        const data=JSON.parse(reader.result);
+        if(!data||!Array.isArray(data.exps)||!Array.isArray(data.cats)){
+          toast('このファイルは家計簿のバックアップではないようです'); return;
+        }
+        if(!confirm('この端末のデータをバックアップファイルの内容で置き換えます。よろしいですか？')) return;
+        S=data;
+        if(!S.deletedExpIds) S.deletedExpIds={};
+        if(!S.sectionTimes) S.sectionTimes={};
+        if(!S.incomeMap) S.incomeMap={};
+        if(!S.budgetMap) S.budgetMap={};
+        if(!S.manualPay) S.manualPay={};
+        // 復元データに含まれる全ての月をクラウドにも保存し直す
+        const months=[...new Set(S.exps.map(e=>e.date.substring(0,7)))];
+        persist(['income','budgetMap','cats','deds','assets','theme'], months);
+        closeModal();
+        applyTheme(); setMonthLabel(); buildNav(); renderCurrent();
+        toast('バックアップから復元しました✅');
+      }catch(e){ toast('ファイルの読み込みに失敗しました'); }
+    };
+    reader.readAsText(f);
+  };
+}
+
+// ─────────────────────────────────────────────
 // BUTTON WIRING
 // ─────────────────────────────────────────────
 document.getElementById('btnAddExp').onclick=openExpModal;
 document.getElementById('FAB').onclick=openExpModal;
+document.getElementById('btnBackup').onclick=openBackupModal;
 
 // ─────────────────────────────────────────────
 // INIT
