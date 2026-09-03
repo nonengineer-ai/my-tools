@@ -1,0 +1,680 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FBFBF8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="数字の練習帳">
+<meta name="description" content="割合・平均・くらべ方・お金の基本を、57問で少しずつ。">
+<title>数字の練習帳</title>
+<style>
+  :root{
+    --paper:#FBFBF8;
+    --paper-deep:#F2F4F0;
+    --grid:#E4EBE5;
+    --line:#D5DCD7;
+    --ink:#26333D;
+    --ink2:#6E7C84;
+    --marker:#F6E259;
+    --pencil:#CE4A38;
+    --green:#3D7A66;
+    --radius:3px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:
+      repeating-linear-gradient(to right, transparent 0 27px, var(--grid) 27px 28px),
+      repeating-linear-gradient(to bottom, transparent 0 27px, var(--grid) 27px 28px),
+      var(--paper);
+    color:var(--ink);
+    font-family:system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;
+    font-size:16px;
+    line-height:1.75;
+    -webkit-font-smoothing:antialiased;
+    padding:0 0 96px;
+  }
+  .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+  .wrap{max-width:660px;margin:0 auto;padding:0 20px}
+
+  /* ---- header ---- */
+  header{padding:52px 0 20px}
+  h1{
+    font-size:30px;line-height:1.35;letter-spacing:.02em;
+    font-weight:700;margin:0 0 10px;
+  }
+  .lede{color:var(--ink2);font-size:15px;margin:0;max-width:46ch}
+
+  /* ---- chapter list ---- */
+  .chapters{list-style:none;margin:34px 0 0;padding:0;border-top:1px solid var(--line)}
+  .ch{
+    display:flex;align-items:baseline;gap:14px;width:100%;text-align:left;
+    background:none;border:0;border-bottom:1px solid var(--line);
+    padding:18px 4px;cursor:pointer;font:inherit;color:inherit;
+  }
+  .ch:hover{background:var(--paper-deep)}
+  .ch:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}
+  .ch-n{
+    flex:0 0 auto;width:26px;height:26px;border:1px solid var(--line);
+    display:grid;place-items:center;font-size:13px;color:var(--ink2);
+    border-radius:50%;transform:translateY(3px);
+  }
+  .ch-done .ch-n{background:var(--marker);border-color:transparent;color:var(--ink)}
+  .ch-body{flex:1 1 auto;min-width:0}
+  .ch-title{font-weight:700;font-size:17px}
+  .ch-sub{color:var(--ink2);font-size:13.5px;line-height:1.6}
+  .ch-count{flex:0 0 auto;font-size:13px;color:var(--ink2)}
+
+  .tools{margin:26px 0 0;display:flex;gap:10px;flex-wrap:wrap}
+  .btn{
+    font:inherit;font-size:14px;padding:9px 16px;cursor:pointer;
+    background:var(--paper);border:1px solid var(--ink);color:var(--ink);
+    border-radius:var(--radius);
+  }
+  .btn:hover{background:var(--ink);color:var(--paper)}
+  .btn:disabled{opacity:.35;cursor:default}
+  .btn:disabled:hover{background:var(--paper);color:var(--ink)}
+  .btn-quiet{border-color:var(--line);color:var(--ink2)}
+  .btn-quiet:hover{background:var(--paper-deep);color:var(--ink)}
+
+  /* ---- quiz ---- */
+  .crumb{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:34px 0 14px;font-size:13.5px;color:var(--ink2);
+  }
+  .crumb button{background:none;border:0;font:inherit;color:var(--ink2);cursor:pointer;padding:0}
+  .crumb button:hover{color:var(--ink);text-decoration:underline}
+
+  .card{
+    background:var(--paper);border:1px solid var(--line);
+    padding:28px 26px 26px;border-radius:var(--radius);
+  }
+  .q{font-size:19px;font-weight:700;line-height:1.65;margin:0 0 4px}
+  .q-note{color:var(--ink2);font-size:14px;margin:10px 0 0}
+
+  .figures{
+    margin:22px 0 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  }
+  .fig{display:flex;justify-content:space-between;gap:16px;padding:9px 2px}
+  .fig+.fig{border-top:1px dotted var(--line)}
+  .fig-k{color:var(--ink2);font-size:14.5px}
+  .fig-v{font-weight:700;font-size:17px}
+
+  .choices{list-style:none;margin:24px 0 0;padding:0;display:grid;gap:10px}
+  .choice{
+    position:relative;width:100%;text-align:left;font:inherit;font-size:16px;
+    background:var(--paper);border:1px solid var(--line);color:var(--ink);
+    padding:14px 16px;cursor:pointer;border-radius:var(--radius);
+    overflow:hidden;line-height:1.6;
+  }
+  .choice:hover{border-color:var(--ink)}
+  .choice:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+  .choice span{position:relative;z-index:1}
+  /* the one bold moment: a highlighter sweeps across the right answer */
+  .choice::before{
+    content:"";position:absolute;z-index:0;left:0;top:8%;height:84%;width:100%;
+    background:var(--marker);transform:scaleX(0);transform-origin:left center;
+  }
+  .choice.right::before{
+    transform:scaleX(1);
+    transition:transform .42s cubic-bezier(.22,.61,.36,1);
+  }
+  .choice.right{border-color:transparent}
+  .choice.miss{border-color:var(--pencil);color:var(--pencil)}
+  .locked .choice{cursor:default}
+  .locked .choice:hover{border-color:var(--line)}
+  .locked .choice.right:hover{border-color:transparent}
+  .locked .choice.miss:hover{border-color:var(--pencil)}
+
+  .verdict{margin:24px 0 0;padding:18px 0 0;border-top:1px solid var(--line)}
+  .verdict h3{margin:0 0 8px;font-size:15px;font-weight:700}
+  .verdict.ok h3{color:var(--green)}
+  .verdict.no h3{color:var(--pencil)}
+  .verdict p{margin:0;font-size:15px;line-height:1.8}
+  .calc{
+    display:inline-block;margin:12px 0 0;padding:6px 12px;
+    background:var(--paper-deep);border-radius:var(--radius);
+    font-size:15px;font-weight:700;
+  }
+  .next{margin:22px 0 0;display:flex;justify-content:flex-end;gap:10px}
+
+  /* ---- done ---- */
+  .done{text-align:left;padding:16px 0 0}
+  .done h2{font-size:22px;margin:0 0 10px}
+  .done p{color:var(--ink2);margin:0 0 22px;font-size:15px}
+
+  .empty{color:var(--ink2);font-size:15px;padding:30px 0}
+
+  /* ---- calculator ---- */
+  .calcbar{
+    position:fixed;left:0;right:0;bottom:0;z-index:5;
+    background:var(--paper);border-top:1px solid var(--line);
+  }
+  .calcbar .wrap{display:flex;align-items:center;gap:10px;padding:10px 20px}
+  .calcbar input{
+    flex:1 1 auto;min-width:0;font:inherit;font-size:16px;
+    padding:9px 12px;border:1px solid var(--line);border-radius:var(--radius);
+    background:var(--paper);color:var(--ink);
+  }
+  .calcbar input:focus{outline:2px solid var(--ink);outline-offset:-1px;border-color:transparent}
+  .calcout{flex:0 0 auto;font-weight:700;font-size:17px;min-width:5ch;text-align:right}
+  .calclabel{flex:0 0 auto;font-size:13px;color:var(--ink2)}
+  @media (max-width:520px){ .calclabel{display:none} h1{font-size:25px} .card{padding:22px 18px} }
+  @media (prefers-reduced-motion:reduce){ .choice.right::before{transition:none} }
+</style>
+
+<div class="wrap" id="app"></div>
+
+<div class="calcbar">
+  <div class="wrap">
+    <span class="calclabel">電卓</span>
+    <input id="calc" class="num" inputmode="text" placeholder="22 / 320 * 100" aria-label="電卓">
+    <span class="calcout num" id="calcout">—</span>
+  </div>
+</div>
+
+<script>
+/* ============ 内容 ============ */
+const CHAPTERS = [
+  {
+    title:"割合をつかむ",
+    sub:"「何%」は割り算ひとつ。ここが全部の土台になります",
+    qs:[
+      { q:"200人が読んで、そのうち50人がスキを押しました。スキ率は何%？",
+        choices:["4%","25%","50%"], a:1,
+        calc:"50 ÷ 200 = 0.25 → 25%",
+        why:"割合は「一部 ÷ 全体」。出た数を100倍すると%になります。小数点を右に2つ動かすだけです。" },
+
+      { q:"記事Aはビュー100でスキ8。記事Bはビュー500でスキ20。スキ率が高いのはどっち？",
+        figs:[["記事A","ビュー100 / スキ8"],["記事B","ビュー500 / スキ20"]],
+        choices:["記事A","記事B","同じ"], a:0,
+        calc:"A = 8÷100 = 8%　B = 20÷500 = 4%",
+        why:"スキの数だけ見るとBが多いのに、率にするとAが倍です。読まれた人数（分母）が違うものは、数のままでは比べられません。" },
+
+      { q:"記事ごとの出来を比べたいとき、見るべきなのは？",
+        choices:["スキの数","スキ率","どちらでもよい"], a:1,
+        calc:null,
+        why:"数は「どれだけ届いたか」、率は「届いた人にどれだけ刺さったか」。記事そのものの手ごたえを知りたいなら率です。" },
+
+      { q:"1,200円の本が30%オフ。いくらになる？",
+        choices:["840円","870円","900円"], a:0,
+        calc:"1200 × 0.7 = 840",
+        why:"30%引きは「70%の値段になる」ということ。引く額を出してから引くより、0.7を掛けるほうが速くて間違えにくいです。" },
+
+      { q:"スキ率が2%から4%になりました。正しい言い方は？",
+        choices:["2%増えた","2%ポイント増えた（率は2倍）","4%増えた"], a:1,
+        calc:"4 − 2 = 2ポイント　　4 ÷ 2 = 2倍",
+        why:"%そのものが増減したときは「%ポイント」を使います。混同すると「2%しか伸びてない」と読めてしまいますが、実際は2倍です。" },
+
+      { q:"税込1,100円。消費税10%として、税抜きはいくら？",
+        choices:["990円","1,000円","1,010円"], a:1,
+        calc:"1100 ÷ 1.1 = 1000",
+        why:"税込は「1.1倍された後の姿」。戻すときは引くのではなく1.1で割ります。1100−110=990 としてしまうのがよくある間違いです。" },
+
+      { q:"「スキ率3%」と言われてもピンとこないとき、どう言いかえるといい？",
+        choices:["100人に読まれたら3人が押す","3人に1人が押す","30人に1人が押す"], a:0,
+        calc:"3% = 100人あたり3人",
+        why:"%は「100人あたり何人か」を表しています。人数の話に戻すと、いきなり実感がわいてきます。" },
+
+      { q:"ビュー80、スキ12。スキ率は？",
+        choices:["12%","15%","18%"], a:1,
+        calc:"12 ÷ 80 = 0.15 → 15%",
+        why:"小さい数を大きい数で割ります。どちらで割るか迷ったら「一部 ÷ 全体」と思い出してください。" },
+
+      { q:"1,500円の商品が2割引。いくら？",
+        choices:["1,200円","1,250円","1,300円"], a:0,
+        calc:"1500 × 0.8 = 1,200",
+        why:"1割は10%なので、2割引は20%引き＝0.8を掛けます。「割」と「%」は10倍の関係でつながっています。" },
+
+      { q:"0.05 を%に直すと？",
+        choices:["0.05%","5%","50%"], a:1,
+        calc:"0.05 × 100 = 5%",
+        why:"小数を%にするには100を掛ける（小数点を右に2つ）。%を小数に戻すときは100で割ります。行き来できると計算が楽になります。" },
+
+      { q:"フォロワー250人のうち、記事を読んだのは18人。読まれた割合は？",
+        choices:["約5.6%","約7.2%","約9.0%"], a:1,
+        calc:"18 ÷ 250 = 0.072 → 7.2%",
+        why:"きれいに割り切れない数こそ電卓の出番です。暗算できることより、どちらをどちらで割るかが分かっていることのほうが大事です。" },
+
+      { q:"ビューが3倍に増えたら、スキ率は下がりました。記事が悪くなったということ？",
+        figs:[["先月","ビュー100 / スキ8（8%）"],["今月","ビュー300 / スキ15（5%）"]],
+        choices:["悪くなった","広く届いた分、率は下がりやすい"], a:1,
+        calc:"8÷100 = 8%　　15÷300 = 5%（スキの数は増えている）",
+        why:"届く範囲が広がると、そこまで刺さらない人にも読まれます。率が下がっても実数が伸びていれば、後退ではありません。率と数、両方見ます。" },
+    ]
+  },
+  {
+    title:"平均のワナ",
+    sub:"平均はよく嘘をつきます。そのかわりが中央値です",
+    qs:[
+      { q:"5本の記事のビューです。平均はいくつ？",
+        figs:[["5本のビュー","40 / 50 / 60 / 70 / 3,000"]],
+        choices:["60","644","3,220"], a:1,
+        calc:"(40+50+60+70+3000) ÷ 5 = 644",
+        why:"全部足して本数で割ります。ただ、この644という数字を持った記事は1本もありません。" },
+
+      { q:"同じ5本。「ふつうの日の自分」を表しているのはどっち？",
+        figs:[["ビュー","40 / 50 / 60 / 70 / 3,000"],["平均値","644"],["中央値","60"]],
+        choices:["平均値の644","中央値の60"], a:1,
+        calc:"小さい順に並べて真ん中 → 40, 50, [60], 70, 3000",
+        why:"3,000という1本が平均を引っぱり上げています。ふだんの実力を知りたいときは、並べて真ん中の値（中央値）のほうが正直です。" },
+
+      { q:"6本ある場合、中央値はどう出す？",
+        figs:[["6本のビュー","20 / 30 / 40 / 60 / 80 / 90"]],
+        choices:["真ん中2つの平均（50）","一番大きい90","全部の平均"], a:0,
+        calc:"(40 + 60) ÷ 2 = 50",
+        why:"偶数個のときは真ん中がないので、真ん中2つを足して2で割ります。それだけです。" },
+
+      { q:"平均を使ってもよいのはどんなとき？",
+        choices:["飛び抜けた値がないとき","データが多いとき","いつでも"], a:0,
+        calc:null,
+        why:"バズや大失敗のような極端な値が混ざると、平均はそちらに引っぱられます。散らばりが穏やかなら平均で十分です。" },
+
+      { q:"「日本の平均年収」より実感に近いと言われるのは？",
+        choices:["平均年収","年収の中央値"], a:1,
+        calc:null,
+        why:"ごく一部のとても高い人が平均を押し上げるためです。noteのビューでも同じことが起きます。構造がまったく同じなんです。" },
+
+      { q:"4本のビューです。中央値は？",
+        figs:[["4本のビュー","30 / 40 / 50 / 1,000"]],
+        choices:["45","280","500"], a:0,
+        calc:"真ん中2つ → (40 + 50) ÷ 2 = 45",
+        why:"1,000という値がどれだけ大きくても、中央値はびくともしません。この「動じなさ」が中央値の役割です。" },
+
+      { q:"平均が644、中央値が60。この差から何が読み取れる？",
+        choices:["計算が間違っている","極端に大きい値が混じっている","データが少なすぎる"], a:1,
+        calc:"平均 ≫ 中央値 → 上に外れ値",
+        why:"平均が中央値よりずっと大きいときは、上に飛び抜けた値があります。ふたつ並べて見るだけで、散らばり方の見当がつきます。" },
+
+      { q:"目標にするなら、どちらが現実的？",
+        figs:[["自分の平均","644ビュー"],["自分の中央値","60ビュー"]],
+        choices:["平均の644を超える","中央値の60を安定して超える"], a:1,
+        calc:null,
+        why:"平均を超えるには、もう一度バズを当てるしかありません。中央値を超え続けるほうは、書き方の工夫で届く範囲です。" },
+
+      { q:"今月は平均ビューが先月の2倍でした。好調と言っていい？",
+        choices:["言っていい","中央値も上がっているか確かめる"], a:1,
+        calc:null,
+        why:"平均だけが跳ねているなら、伸びたのは1本だけかもしれません。平均と中央値の両方が上がって、はじめて全体が動いたと言えます。" },
+    ]
+  },
+  {
+    title:"くらべる",
+    sub:"増えた・減ったを、ちゃんと言えるようになる",
+    qs:[
+      { q:"先月100ビュー、今月130ビュー。何%増えた？",
+        choices:["13%","30%","130%"], a:1,
+        calc:"(130 − 100) ÷ 100 = 0.3 → 30%",
+        why:"増えた分（30）を、もとの数（100）で割ります。「増えた分 ÷ もと」が伸び率です。" },
+
+      { q:"AとB、伸びが大きいのはどっち？",
+        figs:[["A","100 → 130"],["B","1,000 → 1,200"]],
+        choices:["A","B","同じ"], a:0,
+        calc:"A = +30%　B = +20%",
+        why:"増えた数はBが200で多いのに、率で見るとAのほうが勢いがあります。規模が違うものを比べるときは率にそろえます。" },
+
+      { q:"ある記事のビューが2→4になりました。100%増です。喜んでいい？",
+        choices:["喜んでいい、倍だから","もとが小さすぎて何とも言えない"], a:1,
+        calc:"2 → 4 は +100%（ただし増えた実数は2）",
+        why:"分母が小さいと、率は簡単に跳ね上がります。%が大きいときは、必ずもとの数を見にいく癖をつけると騙されません。" },
+
+      { q:"ビューが半分（−50%）に落ちました。元に戻すには何%増やす必要がある？",
+        choices:["50%","100%","150%"], a:1,
+        calc:"100 → 50 に落ちた。50 → 100 は +50/50 = 100%",
+        why:"下がるときと上がるときで分母が変わるため、同じ%では戻りません。−50%を取り返すには+100%が要ります。" },
+
+      { q:"全体のビューは伸びたのに、1本あたりのビューは下がっていました。何が起きた？",
+        choices:["記事の質が上がった","本数を増やしたので合計だけ伸びた","計算ミス"], a:1,
+        calc:"合計 ÷ 本数 = 1本あたり",
+        why:"合計は「本数 × 1本の力」でできています。合計が伸びても、伸びたのが本数だけなら1本の力は変わっていません。分けて見ます。" },
+
+      { q:"100が90になりました。何%減？",
+        choices:["9%減","10%減","90%減"], a:1,
+        calc:"(100 − 90) ÷ 100 = 0.1 → 10%減",
+        why:"減ったときも同じで「減った分 ÷ もと」。ちなみに「90%になった」と「90%減った」はまったく違う意味です。" },
+
+      { q:"「前年比120%」と「前年より20%増」は同じ意味？",
+        choices:["同じ","違う"], a:0,
+        calc:"120% = 1.2倍 = +20%",
+        why:"言い方が違うだけです。◯◯比は「もとを100としたときの今」、◯%増は「増えた分」を指しています。並べて覚えると混乱しません。" },
+
+      { q:"3か月で 100 → 110 → 121 と伸びました。毎月何%ずつ？",
+        choices:["10%ずつ","10.5%ずつ","21%を3で割った7%ずつ"], a:0,
+        calc:"110÷100 = 1.1　　121÷110 = 1.1",
+        why:"2か月目の10%は、増えた後の110に対して掛かっています。だから110ではなく121。増え方が積み上がるときは、足し算ではなく掛け算で考えます。" },
+
+      { q:"「3倍になった」は、何%増えたということ？",
+        choices:["100%増","200%増","300%増"], a:1,
+        calc:"100 → 300　増えた分は200　→ +200%",
+        why:"倍と%はひとつずれます。2倍＝+100%、3倍＝+200%。%で言われたときは、まず倍に直すと感覚がつかめます。" },
+    ]
+  },
+  {
+    title:"その数字、信じていい？",
+    sub:"疑うポイントは決まっています。覚えるより気づけること",
+    qs:[
+      { q:"どちらのアンケート結果が信頼できる？",
+        figs:[["A","10人中7人が満足（70%）"],["B","100人中65人が満足（65%）"]],
+        choices:["A（率が高い）","B（人数が多い）"], a:1,
+        calc:null,
+        why:"Aは1人気が変わるだけで60%にも80%にもなります。人数が少ないほど、数字は偶然で揺れます。%より先に分母を見ます。" },
+
+      { q:"新しい書き方を試したら、1本目がすごく伸びました。この書き方は正解？",
+        choices:["正解だと判断していい","1本ではまだ分からない"], a:1,
+        calc:null,
+        why:"1本の結果は、おすすめに載ったかどうかで簡単に変わります。同じ条件で数本ためてから、はじめて傾向として扱えます。" },
+
+      { q:"「満足度95%！」という広告。まず何を確認する？",
+        choices:["誰が調査したか","何人に聞いたか","いつの調査か"], a:1,
+        calc:null,
+        why:"どれも大事ですが、分母が書かれていない%はいちばん危ういです。20人中19人でも95%になります。" },
+
+      { q:"グラフの棒が2倍近く見えるのに、数字は102と105でした。なぜ？",
+        choices:["縦軸が0から始まっていない","計算が間違っている","そういう表示方法がある"], a:0,
+        calc:null,
+        why:"縦軸を100から始めると、わずかな差が劇的に見えます。グラフを見たら、まず軸の一番下の数字を確認します。" },
+
+      { q:"「先週から急上昇！」と言われたとき、いちばん怪しいのは？",
+        choices:["上昇という言葉","比べている期間の切り取り方","急という表現"], a:1,
+        calc:null,
+        why:"いちばん低かった週を起点にすれば、どんな数字も上昇します。期間を変えても同じ結論になるかを見ると分かります。" },
+
+      { q:"「続けた人の9割が効果を実感」。この数字の弱点は？",
+        choices:["9割では少ない","途中でやめた人が数に入っていない","実感は主観だから"], a:1,
+        calc:null,
+        why:"効かなかった人ほど先にやめています。残った人だけを数えると、どんなものでも高い数字が出せてしまいます。" },
+
+      { q:"夜に出した記事のほうがよく読まれていました。「夜に出すと伸びる」と言える？",
+        choices:["言える","夜に出した記事が別の点でも違う可能性がある"], a:1,
+        calc:null,
+        why:"夜に出したのが、たまたま力を入れた記事だったかもしれません。同時に起きたことは、原因の候補がいくつも残ります。" },
+
+      { q:"前の問題を確かめるには、どうするのが一番いい？",
+        choices:["夜の記事をもっと増やす","同じような記事を、昼と夜に分けて出す","過去の記事を全部数え直す"], a:1,
+        calc:null,
+        why:"変えるのは時間だけ、あとはそろえる。ひとつだけ変えて比べると、原因がはっきりします。数字を読む力の半分は、この比べ方の設計です。" },
+
+      { q:"「ランキング3位」と書いてありました。まず知りたいのは？",
+        choices:["何位まであるのか","いつの順位か","誰が決めたか"], a:0,
+        calc:null,
+        why:"全3件の3位でも「3位」です。順位は、母数とセットでないと意味を持ちません。%のときに分母を見るのと同じ習慣です。" },
+    ]
+  },
+  {
+    title:"お金の計算",
+    sub:"売上・手取り・時給。ここは足し算と掛け算だけです",
+    qs:[
+      { q:"500円の記事が12本売れました。売上は？",
+        choices:["5,000円","6,000円","6,500円"], a:1,
+        calc:"500 × 12 = 6,000",
+        why:"単価 × 個数。ここはそのままです。" },
+
+      { q:"その6,000円から手数料15%が引かれます。手取りは？",
+        choices:["5,100円","5,400円","5,850円"], a:0,
+        calc:"6000 × 0.85 = 5,100",
+        why:"15%引かれる＝85%が残る。引き算するより0.85を掛けたほうが早いです。割合の章と同じ考え方です。" },
+
+      { q:"制作に10時間かけて、手取りが5,100円でした。時給に直すと？",
+        choices:["約510円","約600円","約1,000円"], a:0,
+        calc:"5100 ÷ 10 = 510",
+        why:"「かかった時間で割る」だけで、続けられる仕事かどうかが見えます。売上より、この数字のほうが判断に使えます。" },
+
+      { q:"手数料15%を引いたあとで月1万円を残したい。500円の記事は何本売れればいい？",
+        choices:["20本","24本","30本"], a:1,
+        calc:"10000 ÷ (500 × 0.85) = 10000 ÷ 425 ≒ 23.5 → 24本",
+        why:"目標額 ÷ 1本あたりの手取り。手数料を先に引いてから割るのがポイントです。20本だと8,500円にしかなりません。" },
+
+      { q:"5,000円を1本売るのと、500円を10本売るのは売上が同じ。違いはどこ？",
+        choices:["違いはない","必要な購入者の人数が10倍違う","手数料が違う"], a:1,
+        calc:"5,000円 → 1人　　500円 → 10人",
+        why:"同じ売上でも、必要な人数がまるで違います。読者が少ないうちは、単価を上げるか人数を増やすかで打ち手が変わります。" },
+
+      { q:"5,000円の記事が毎月2本ずつ売れたら、1年でいくら？",
+        choices:["6万円","10万円","12万円"], a:2,
+        calc:"5000 × 2 × 12 = 120,000",
+        why:"単価 × 月の本数 × 12。小さく見える数字も、続く前提で12を掛けると景色が変わります。" },
+
+      { q:"単価を500円から1,000円に上げると、同じ売上に必要な人数は？",
+        choices:["半分","同じ","2倍"], a:0,
+        calc:"10,000円 ÷ 500 = 20人　　10,000円 ÷ 1,000 = 10人",
+        why:"人を増やすのと単価を上げるのは、同じ売上への別ルートです。読者が少ないうちは、後者のほうが近いことがあります。" },
+
+      { q:"手数料15%を引いて月3万円を残したい。単価500円なら何本？",
+        choices:["約60本","約71本","約85本"], a:1,
+        calc:"30000 ÷ (500 × 0.85) = 30000 ÷ 425 ≒ 70.6 → 71本",
+        why:"手取り単価を先に出してから割ります。この本数が現実的に見えるかどうかが、単価を見直すかどうかの判断材料になります。" },
+
+      { q:"制作に20時間かけた商品が、3か月売れていません。やめる判断の材料になるのは？",
+        choices:["かけた20時間","出す前に決めていた基準","気持ち"], a:1,
+        calc:null,
+        why:"かけた時間は戻ってこないので、これから続けるかの判断には使えません。むしろ「もったいない」と思わせて判断を狂わせます。" },
+    ]
+  },
+  {
+    title:"ダッシュボードを読む",
+    sub:"ここまでの道具を全部つないで、判断まで持っていきます",
+    qs:[
+      { q:"2本の記事です。スキ率が高いのはどっち？",
+        figs:[["記事A","実読ビュー320 / スキ22"],["記事B","実読ビュー1,200 / スキ48"]],
+        choices:["記事A","記事B"], a:0,
+        calc:"A = 22÷320 ≒ 6.9%　B = 48÷1200 = 4.0%",
+        why:"Bのほうがずっと多く読まれていますが、刺さり方はAが上です。届いた量と刺さり方は、別の話として分けて見ます。" },
+
+      { q:"自分の中央値が5%だとすると、いま「平均以上」なのは？",
+        figs:[["自分の中央値","5.0%"],["記事A","6.9%"],["記事B","4.0%"]],
+        choices:["記事Aだけ","記事Bだけ","両方"], a:0,
+        calc:"6.9% > 5.0% > 4.0%",
+        why:"世間の平均ではなく、自分の中央値を基準線にします。他人と比べても打ち手は出てきません。" },
+
+      { q:"今月のビューが先月の2倍。ただし、うち1本が突出しています。実力は上がった？",
+        choices:["上がった","その1本を抜いて比べないと分からない"], a:1,
+        calc:"合計 −（突出した1本）で先月と比べる",
+        why:"平均のワナと同じ形です。極端な1本を抜いた残りが伸びていれば本物、変わっていなければ、たまたま当たった月です。" },
+
+      { q:"新しい書き方を3本試して、3本とも中央値以下でした。どうする？",
+        choices:["もっと続けて様子を見る","いったん元の書き方に戻す","本数を増やす"], a:1,
+        calc:null,
+        why:"1本なら偶然でも、3本続くと傾向として扱えます。ここで戻せることが、数字を見る一番の見返りです。" },
+
+      { q:"「やめるかどうか」の基準は、いつ決めるのがいい？",
+        choices:["結果を見てから","記事を出す前に"], a:1,
+        calc:null,
+        why:"数字を見てから基準を決めると、人はどうしても続ける理由のほうを見つけてしまいます。先に書いておけば、判断は自動になります。" },
+
+      { q:"「表示回数」と「実際に開かれた数」。記事の手ごたえを測るのに使うのは？",
+        choices:["表示回数","開かれた数"], a:1,
+        calc:null,
+        why:"表示回数には、通り過ぎただけの人が含まれます。分母に無関係な人が混ざると、率は実態より低く出ます。分母を正しく選ぶのが最初の一歩です。" },
+
+      { q:"ビューは倍になったのに、スキ率は下がりました。まず疑うのは？",
+        choices:["記事の質が落ちた","おすすめに載って、ふだんと違う人に届いた"], a:1,
+        calc:null,
+        why:"第1章でやった、分母が広がったときの動きです。スキの実数が減っていなければ、質が落ちたとは言えません。" },
+
+      { q:"新しい書き方を2本試して、2本とも中央値以下。3本ルールならどうする？",
+        choices:["ここでやめる","もう1本出して判断する","本数を無視して続ける"], a:1,
+        calc:null,
+        why:"決めた基準は、都合が悪いときほど守る価値があります。2本でやめるのも、5本まで延ばすのも、後づけの判断です。" },
+
+      { q:"型ごとに比べたいのに、本数がそろっていません（余白型8本、声型3本）。どうする？",
+        choices:["本数をそろえてから比べる","1本あたりの率で比べる","合計で比べる"], a:1,
+        calc:"合計 ÷ 本数 = 1本あたり",
+        why:"合計では本数が多いほうが勝ってしまいます。1本あたりにそろえれば、いま持っているデータのまま比べられます。ただし3本はまだ少なめです。" },
+    ]
+  },
+];
+
+/* ============ 状態 ============ */
+const KEY = "numpractice:v1";
+let state = { done:{}, wrong:{} };
+let view = { name:"home", ch:0, i:0, review:false, queue:[] };
+
+const hasHostStore = typeof window !== "undefined" && window.storage && typeof window.storage.get === "function";
+
+async function load(){
+  if(hasHostStore){
+    try{
+      const r = await window.storage.get(KEY);
+      if(r && r.value){ state = JSON.parse(r.value); return; }
+    }catch(e){ /* 初回はキーが無いのでここを通る */ }
+  }
+  try{
+    const raw = window.localStorage.getItem(KEY);
+    if(raw) state = JSON.parse(raw);
+  }catch(e){ /* 保存できない環境ではその場かぎりで動かす */ }
+}
+async function save(){
+  const json = JSON.stringify(state);
+  if(hasHostStore){
+    try{ await window.storage.set(KEY, json); }catch(e){}
+  }
+  try{ window.localStorage.setItem(KEY, json); }catch(e){}
+}
+
+const qid = (c,i) => c + "-" + i;
+const chDone = c => CHAPTERS[c].qs.filter((_,i)=>state.done[qid(c,i)]).length;
+const wrongList = () => Object.keys(state.wrong).filter(k=>state.wrong[k])
+  .map(k=>k.split("-").map(Number)).filter(([c,i])=>CHAPTERS[c] && CHAPTERS[c].qs[i]);
+
+/* ============ 描画 ============ */
+const app = document.getElementById("app");
+const esc = s => String(s).replace(/[&<>"]/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
+
+function renderHome(){
+  const total = CHAPTERS.reduce((s,c)=>s+c.qs.length,0);
+  const solved = Object.values(state.done).filter(Boolean).length;
+  const wrongs = wrongList().length;
+
+  app.innerHTML = `
+  <header>
+    <h1>数字の練習帳</h1>
+    <p class="lede">割合、平均、くらべ方、お金。ダッシュボードを読むのに要る道具だけを、少しずつ。電卓は下にあります、使ってください。</p>
+  </header>
+  <ul class="chapters">
+    ${CHAPTERS.map((c,ci)=>{
+      const d = chDone(ci), full = d===c.qs.length;
+      return `<li><button class="ch ${full?"ch-done":""}" data-ch="${ci}">
+        <span class="ch-n num">${full?"✓":ci+1}</span>
+        <span class="ch-body">
+          <span class="ch-title">${esc(c.title)}</span><br>
+          <span class="ch-sub">${esc(c.sub)}</span>
+        </span>
+        <span class="ch-count num">${d}/${c.qs.length}</span>
+      </button></li>`;
+    }).join("")}
+  </ul>
+  <div class="tools">
+    <button class="btn" id="review" ${wrongs?"":"disabled"}>まちがえた${wrongs}問を解き直す</button>
+    <button class="btn btn-quiet" id="reset">進み具合を消す</button>
+  </div>
+  <p class="ch-sub" style="margin-top:18px">${solved} / ${total} 問</p>`;
+
+  app.querySelectorAll("[data-ch]").forEach(b=>b.onclick=()=>{
+    view = { name:"quiz", ch:+b.dataset.ch, i:0, review:false, queue:null };
+    render();
+  });
+  const rv = document.getElementById("review");
+  if(rv) rv.onclick = ()=>{ view={name:"quiz",review:true,queue:wrongList(),i:0}; render(); };
+  document.getElementById("reset").onclick = async ()=>{
+    state = { done:{}, wrong:{} }; await save(); render();
+  };
+}
+
+function renderQuiz(){
+  const [ci, qi] = view.review ? view.queue[view.i] : [view.ch, view.i];
+  const ch = CHAPTERS[ci], q = ch.qs[qi];
+  const pos = view.review ? `${view.i+1} / ${view.queue.length}` : `${qi+1} / ${ch.qs.length}`;
+
+  app.innerHTML = `
+  <div class="crumb">
+    <button id="back">← 目次</button>
+    <span>${view.review ? "解き直し" : esc(ch.title)}　<span class="num">${pos}</span></span>
+  </div>
+  <div class="card" id="card">
+    <p class="q">${esc(q.q)}</p>
+    ${q.figs ? `<div class="figures">${q.figs.map(([k,v])=>
+      `<div class="fig"><span class="fig-k">${esc(k)}</span><span class="fig-v num">${esc(v)}</span></div>`).join("")}</div>` : ""}
+    <ul class="choices" id="choices">
+      ${q.choices.map((c,idx)=>`<li><button class="choice" data-i="${idx}"><span>${esc(c)}</span></button></li>`).join("")}
+    </ul>
+    <div id="after"></div>
+  </div>`;
+
+  document.getElementById("back").onclick = ()=>{ view={name:"home"}; render(); };
+
+  const list = document.getElementById("choices");
+  list.querySelectorAll(".choice").forEach(b=>{
+    b.onclick = async ()=>{
+      if(list.classList.contains("locked")) return;
+      list.classList.add("locked");
+      const picked = +b.dataset.i, ok = picked === q.a;
+      list.querySelectorAll(".choice")[q.a].classList.add("right");
+      if(!ok) b.classList.add("miss");
+
+      state.done[qid(ci,qi)] = true;
+      if(ok){ delete state.wrong[qid(ci,qi)]; } else { state.wrong[qid(ci,qi)] = true; }
+      await save();
+
+      const last = view.review ? view.i === view.queue.length-1 : qi === ch.qs.length-1;
+      document.getElementById("after").innerHTML = `
+        <div class="verdict ${ok?"ok":"no"}">
+          <h3>${ok ? "そのとおりです" : "おしい、正解は上の行です"}</h3>
+          ${q.calc ? `<div class="calc num">${esc(q.calc)}</div>` : ""}
+          <p style="margin-top:10px">${esc(q.why)}</p>
+        </div>
+        <div class="next">
+          <button class="btn" id="next">${last ? "終わりにする" : "次の問題"}</button>
+        </div>`;
+      document.getElementById("next").onclick = ()=>{
+        if(last){ view = view.review ? {name:"home"} : {name:"done", ch:ci}; }
+        else { view.i++; }
+        render();
+      };
+      document.getElementById("next").focus();
+    };
+  });
+}
+
+function renderDone(){
+  const ch = CHAPTERS[view.ch];
+  const missed = ch.qs.filter((_,i)=>state.wrong[qid(view.ch,i)]).length;
+  const nextCh = view.ch+1 < CHAPTERS.length ? view.ch+1 : null;
+  app.innerHTML = `
+  <div class="crumb"><button id="back">← 目次</button><span>${esc(ch.title)}</span></div>
+  <div class="card done">
+    <h2>${esc(ch.title)}、ひととおり終わりました</h2>
+    <p>${missed ? `まちがえたのは${missed}問。あとで解き直せます。` : "全問そろいました。"}</p>
+    <div class="tools" style="margin:0">
+      ${nextCh!==null ? `<button class="btn" id="go">次は「${esc(CHAPTERS[nextCh].title)}」へ</button>` : ""}
+      <button class="btn btn-quiet" id="again">この章をもう一度</button>
+    </div>
+  </div>`;
+  document.getElementById("back").onclick = ()=>{ view={name:"home"}; render(); };
+  const go = document.getElementById("go");
+  if(go) go.onclick = ()=>{ view={name:"quiz",ch:nextCh,i:0,review:false}; render(); };
+  document.getElementById("again").onclick = ()=>{ view={name:"quiz",ch:view.ch,i:0,review:false}; render(); };
+}
+
+function render(){
+  if(view.name==="quiz" && view.review && !view.queue.length){ view={name:"home"}; }
+  if(view.name==="home") renderHome();
+  else if(view.name==="quiz") renderQuiz();
+  else renderDone();
+  window.scrollTo(0,0);
+}
+
+/* ============ 電卓 ============ */
+const calc = document.getElementById("calc"), calcout = document.getElementById("calcout");
+calc.addEventListener("input", ()=>{
+  const raw = calc.value.trim();
+  if(!raw){ calcout.textContent = "—"; return; }
+  if(!/^[0-9+\-*/().,\s%]+$/.test(raw)){ calcout.textContent = "?"; return; }
+  try{
+    const expr = raw.replace(/,/g,"").replace(/%/g,"/100");
+    const v = Function('"use strict";return (' + expr + ')')();
+    calcout.textContent = (typeof v === "number" && isFinite(v))
+      ? (Math.round(v*10000)/10000).toLocaleString("ja-JP") : "?";
+  }catch(e){ calcout.textContent = "?"; }
+});
+
+load().then(render);
+</script>
