@@ -350,6 +350,8 @@ function settingsFromState() {
     gotItems: S.gotItems,
     theme:  S.theme,
     deletedExpIds: S.deletedExpIds||{},
+    deletedDedIds: S.deletedDedIds||{},      // 削除済みの固定引き落とし
+    deletedCatNames: S.deletedCatNames||{},  // 削除済みのカテゴリ
     sectionTimes: S.sectionTimes||{},  // 項目ごとの更新時刻（予算だけ・資産だけ等、変えた項目だけを新しい扱いにする）
     updatedAt: Date.now(),
   };
@@ -472,9 +474,19 @@ async function cloudLoad(silent=false) {
       S.budgetMap = cloudNewer('budgetMap')
         ? mergeBudgetMap(cloud.budgetMap, S.budgetMap)
         : mergeBudgetMap(S.budgetMap, cloud.budgetMap);
-      // カテゴリ・固定費（片方にしかない項目は残す）
-      S.cats = cloudNewer('cats') ? mergeByKey(cloud.cats, S.cats, c=>c.name) : mergeByKey(S.cats, cloud.cats, c=>c.name);
-      S.deds = cloudNewer('deds') ? mergeByKey(cloud.deds, S.deds, d=>d.id) : mergeByKey(S.deds, cloud.deds, d=>d.id);
+      // 削除記録の統合（どちらが新しいかに関わらず両方を合算する）
+      // これが無いと、片方の端末で消したカテゴリ・固定引き落としが、
+      // まだ持っているもう一方の端末との統合で毎回復活してしまう。
+      const mergeTomb=(a,b)=>{ const r={...(a||{})}; Object.entries(b||{}).forEach(([k,t])=>{ r[k]=Math.max(r[k]||0,t); }); return r; };
+      S.deletedDedIds   = mergeTomb(cloud.deletedDedIds,   S.deletedDedIds);
+      S.deletedCatNames = mergeTomb(cloud.deletedCatNames, S.deletedCatNames);
+
+      // カテゴリ・固定費（片方にしかない項目は残す。ただし削除済みのものは復活させない）
+      const catsMerged = cloudNewer('cats') ? mergeByKey(cloud.cats, S.cats, c=>c.name) : mergeByKey(S.cats, cloud.cats, c=>c.name);
+      const catsKept = catsMerged.filter(c=>!S.deletedCatNames[c.name]);
+      S.cats = catsKept.length ? catsKept : catsMerged;  // 万一全部消える異常時は元に戻す（安全弁）
+      const dedsMerged = cloudNewer('deds') ? mergeByKey(cloud.deds, S.deds, d=>d.id) : mergeByKey(S.deds, cloud.deds, d=>d.id);
+      S.deds = dedupeDeds(dedsMerged.filter(d=>!S.deletedDedIds[String(d&&d.id)]));
       // 資産：従来はマージ処理が無く丸ごと入れ替えだった（＝リセット事故の原因）。
       // 資産を最後に更新した側の値だけを採用する。
       if (cloudNewer('assets') && cloud.assets) S.assets = cloud.assets;
@@ -603,13 +615,19 @@ function defaultState(){
     assets:{nisa:0,ideco:0,futsu:0,teiki:0},
     deds:[],
     theme:'light',
-    deletedExpIds:{},  // {id: 削除時刻} 削除済み支出のIDを記録し、同期時に復活しないようにする
+    deletedExpIds:{},   // {id: 削除時刻} 削除済み支出のIDを記録し、同期時に復活しないようにする
+    deletedDedIds:{},   // {id: 削除時刻} 削除済みの固定引き落とし
+    deletedCatNames:{}, // {カテゴリ名: 削除時刻} 削除済みのカテゴリ
   };
 }
 let S;
 try{ S=JSON.parse(localStorage.getItem('kakeibo7')||'null')||defaultState(); }
 catch(e){ S=defaultState(); }
 if(!S.deletedExpIds) S.deletedExpIds={};
+if(!S.deletedDedIds) S.deletedDedIds={};
+if(!S.deletedCatNames) S.deletedCatNames={};
+// 起動時に固定引き落としの重複を整理（過去の同期で二重登録されたぶんを掃除する）
+S.deds=dedupeDeds((S.deds||[]).filter(d=>!S.deletedDedIds[String(d&&d.id)]));
 if(!S.sectionTimes) S.sectionTimes={};  // 項目ごとの更新時刻（旧データからの移行）
 if(S.coinsEarned===undefined||S.coinsEarned===null) S.coinsEarned=S.coins||0;  // 累計獲得コイン（旧データからの移行）
 if(!S.penaltyByMonth) S.penaltyByMonth={};  // 月ごとの予算超過ペナルティ
@@ -673,6 +691,28 @@ function mergeByKey(winnerArr, loserArr, keyFn){
   const map=new Map();
   (loserArr||[]).forEach(item=>map.set(keyFn(item), item));
   (winnerArr||[]).forEach(item=>map.set(keyFn(item), item)); // 同じキーは新しい方で上書き
+  return Array.from(map.values());
+}
+// 固定引き落としの重複除去
+// 【背景】固定引き落としはIDで統合しているが、同じ項目をスマホとPCでそれぞれ
+// 　登録すると別々のIDになるため、同期のたびに union されて二重表示になっていた。
+// 　そこで「名前・引き落とし日・種別・金額」が同じものは同一項目とみなし、
+// 　古い方（IDが小さい方）だけを残す。どちらの端末で実行しても同じ結果になるので、
+// 　同期を繰り返しても増え続けない。
+// 　落とした方のIDは削除済みとして記録し、別端末から復活しないようにする。
+function dedupeDeds(deds){
+  const map=new Map();
+  (deds||[]).forEach(d=>{
+    if(!d) return;
+    const key=(d.name||'')+'|'+d.day+'|'+d.type+'|'+d.amt;
+    const cur=map.get(key);
+    if(!cur||(+d.id||0)<(+cur.id||0)) map.set(key,d);
+  });
+  const keep=new Set(Array.from(map.values()).map(d=>String(d.id)));
+  if(!S.deletedDedIds) S.deletedDedIds={};
+  (deds||[]).forEach(d=>{
+    if(d&&d.id!=null&&!keep.has(String(d.id))) S.deletedDedIds[String(d.id)]=Date.now();
+  });
   return Array.from(map.values());
 }
 // 重複除去関数（共通）
@@ -1361,6 +1401,9 @@ function renderBudget(){
         if(n) S.cats[ri].name=n;
         S.budgetMap[S.month][S.cats[ri].name]=y>0?y:null;
       });
+      // 削除したカテゴリ名を記録しておく（記録しないと同期で復活する）
+      if(!S.deletedCatNames) S.deletedCatNames={};
+      S.deletedCatNames[S.cats[i].name]=Date.now();
       S.cats.splice(i,1); renderBudget();
     };
   });
@@ -1420,6 +1463,7 @@ function renderBudget(){
         S.budgetMap[S.month][S.cats[i].name]=y>0?y:null;
       });
       const cols=['#10b981','#6366f1','#f59e0b','#ec4899','#8b5cf6'];
+      if(S.deletedCatNames) delete S.deletedCatNames[name];  // 一度消した名前を再登録できるようにする
       S.cats.push({name,e:'📦',pct:0,col:cols[S.cats.length%cols.length],manual:null});
       renderBudget();
     };
@@ -1436,6 +1480,8 @@ function renderBudget(){
       // 金額は当月のbudgetMapにのみ保存（他の月に影響しない）
       S.budgetMap[S.month][S.cats[i].name]=y>0?y:null;
     });
+    // 画面に残っているカテゴリは「削除済み」から外す（リネーム後の名前も含めて）
+    if(S.deletedCatNames) S.cats.forEach(c=>{ delete S.deletedCatNames[c.name]; });
     refreshCoins([S.month]);
     persist(['cats','budgetMap','coins']);
     toast('予算を保存したよ！🎯');
@@ -1792,6 +1838,9 @@ function renderDedList(container){
     el.onclick=()=>{
       const i=+el.dataset.deddel;
       if(!confirm('「'+S.deds[i].name+'」を削除しますか？')) return;
+      // 削除したIDを記録しておく（記録しないと、もう一方の端末との同期で復活する）
+      const delDed=S.deds[i];
+      if(delDed&&delDed.id!=null){ if(!S.deletedDedIds) S.deletedDedIds={}; S.deletedDedIds[String(delDed.id)]=Date.now(); }
       S.deds.splice(i,1); persist(['deds']); renderPayments();
     };
   });
@@ -1875,6 +1924,7 @@ function openDedModal(d){
       if(idx>=0) S.deds[idx]={...S.deds[idx],name,day,type,amt,cat,memo};
     } else {
       if(!S.deds) S.deds=[];
+      // 新規登録は毎回新しいIDになるため、過去の削除記録には引っかからない
       S.deds.push({id:Date.now(),name,day,type,amt,cat,memo,on:true});
     }
     persist(['deds']); closeModal(); toast('固定引き落としを登録しました🏦'); renderPayments();
@@ -2079,6 +2129,9 @@ function openBackupModal(){
         if(!S.manualPay) S.manualPay={};
         if(S.coinsEarned===undefined||S.coinsEarned===null) S.coinsEarned=S.coins||0;
         if(!S.penaltyByMonth) S.penaltyByMonth={};
+        if(!S.deletedDedIds) S.deletedDedIds={};
+        if(!S.deletedCatNames) S.deletedCatNames={};
+        S.deds=dedupeDeds((S.deds||[]).filter(d=>!S.deletedDedIds[String(d&&d.id)]));
         // 復元データに含まれる全ての月をクラウドにも保存し直す
         const months=[...new Set(S.exps.map(e=>e.date.substring(0,7)))];
         refreshCoins([S.month, ...months]);  // 復元後のコイン残高を計算し直す
