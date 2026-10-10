@@ -818,7 +818,7 @@ function renderDashboard(){
     if(ALERT_EXCLUDE.includes(c.name)) return '';
     const b=budget(c); const sp=spent(c.name);
     const p=b>0?Math.round(sp/b*100):0;
-    return p>=90?`<div class="abanner">⚠️ ${c.e} ${c.name}の予算が${p}%に達しています${sp>b?'（超過！）':''}。</div>`:'';
+    return (b>0&&sp>b)?`<div class="abanner">⚠️ ${c.e} ${c.name}の予算を超過しています（${p}%・${yen(sp-b)}オーバー）。</div>`:'';
   }).join('');
 
   // 節約バッジ
