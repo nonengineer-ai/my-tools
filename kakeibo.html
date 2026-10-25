@@ -349,7 +349,9 @@ function settingsFromState() {
     gotItems: S.gotItems,
     theme:  S.theme,
     deletedExpIds: S.deletedExpIds||{},
-    updatedAt: Date.now(),
+    deletedCatNames: S.deletedCatNames||{},
+    deletedDedIds: S.deletedDedIds||{},
+    updatedAt: S.settingsUpdatedAt||Date.now(),
   };
 }
 
@@ -359,6 +361,7 @@ function monthDataFromState(ym) {
     manualPay: Object.fromEntries(
       Object.entries(S.manualPay || {}).filter(([k]) => k.startsWith(ym))
     ),
+    manualPayAt: (S.manualPayAt||{})[ym]||0,
     updatedAt: Date.now(),
   };
 }
@@ -378,113 +381,139 @@ function gasPost(body) {
   }).then(r => r.json());
 }
 
-// クラウドへ保存（設定＋当月データ）
-async function cloudSave() {
-  try {
+// ─────────────────────────────────────────────
+// 同期エンジン（どの端末でも「クラウドを読む → 統合 → 書き戻す」の順で保存する）
+// 以前は保存時にクラウドを見ずに上書きしていたため、古いデータを持つ端末（例：
+// 開きっぱなしのPC）が保存すると、別端末で削除した支出がクラウドに戻って復活していた。
+// ─────────────────────────────────────────────
+function expKey(e){ return e.id?('id:'+e.id):(e.date+'|'+e.cat+'|'+e.amt+'|'+e.card+'|'+(e.memo||'')); }
+// 同じ支出が両方にあれば、最終更新時刻(updatedAt)が新しい方を採用（編集内容も端末間で揃う）
+function mergeExpLists(localArr, cloudArr){
+  const map=new Map();
+  (localArr||[]).forEach(e=>map.set(expKey(e),e));
+  (cloudArr||[]).forEach(e=>{
+    const k=expKey(e), cur=map.get(k);
+    if(!cur || (e.updatedAt||0)>(cur.updatedAt||0)) map.set(k,e);
+  });
+  return Array.from(map.values());
+}
+// 削除記録（墓標）は両端末の分を必ず合算する
+function mergeTombs(a,b){
+  const r={...(a||{})};
+  Object.entries(b||{}).forEach(([k,t])=>{ r[k]=Math.max(r[k]||0, t||0); });
+  return r;
+}
+// 削除記録にあるものを取り除く（カテゴリは削除後に作り直した場合は残す）
+function applyTombs(){
+  const te=S.deletedExpIds||{}, tc=S.deletedCatNames||{}, td=S.deletedDedIds||{};
+  S.exps=S.exps.filter(e=>!(e.id&&te[e.id]));
+  S.cats=S.cats.filter(c=>!(tc[c.name] && tc[c.name]>(c.at||0)));
+  S.deds=(S.deds||[]).filter(d=>!td[d.id]);
+}
+function mergeSettingsFromCloud(cloud){
+  const local = settingsFromState();
+  const localUpdatedAt = S.settingsUpdatedAt || 0;
+  const cloudUpdatedAt = cloud.updatedAt || 0;
+  const cloudIsNewer = cloudUpdatedAt > localUpdatedAt;
+  const winner = cloudIsNewer ? cloud : local;
+  const loser  = cloudIsNewer ? local : cloud;
+
+  S.income    = winner.income ?? loser.income ?? S.income;
+  S.incomeMap = { ...(loser.incomeMap||{}), ...(winner.incomeMap||{}) };
+  S.budgetMap = mergeBudgetMap(winner.budgetMap, loser.budgetMap);
+  S.cats      = mergeByKey(winner.cats, loser.cats, c=>c.name);
+  S.deds      = mergeByKey(winner.deds, loser.deds, d=>d.id);
+  S.assets    = winner.assets ?? loser.assets ?? S.assets;
+  S.coins     = Math.max(winner.coins||0, loser.coins||0);
+  S.records   = Math.max(winner.records||0, loser.records||0);
+  S.gotItems  = { ...(loser.gotItems||{}), ...(winner.gotItems||{}) };
+  S.theme     = winner.theme ?? S.theme;
+  S.deletedExpIds   = mergeTombs(cloud.deletedExpIds,   S.deletedExpIds);
+  S.deletedCatNames = mergeTombs(cloud.deletedCatNames, S.deletedCatNames);
+  S.deletedDedIds   = mergeTombs(cloud.deletedDedIds,   S.deletedDedIds);
+  S.settingsUpdatedAt = Math.max(cloudUpdatedAt, localUpdatedAt);
+}
+function mergeMonthFromCloud(ym, cloud){
+  S.exps = mergeExpLists(S.exps, cloud.exps||[]);
+  if(!S.manualPay) S.manualPay={};
+  if(!S.manualPayAt) S.manualPayAt={};
+  const cAt=cloud.manualPayAt||0, lAt=S.manualPayAt[ym]||0;
+  const cmp=cloud.manualPay||{};
+  if(cAt>lAt){
+    Object.keys(S.manualPay).forEach(k=>{ if(k.startsWith(ym)) delete S.manualPay[k]; });
+    Object.assign(S.manualPay, cmp);
+    S.manualPayAt[ym]=cAt;
+  } else if(cAt===lAt){
+    Object.entries(cmp).forEach(([k,v])=>{ if(!(k in S.manualPay)) S.manualPay[k]=v; });
+  }
+}
+
+const _dirtyMonths=new Set();
+let _syncTimer=null, _syncRunning=null, _syncAgain=false, _retryTimer=null;
+function markDirty(ym){ if(ym) _dirtyMonths.add(ym); }
+function requestSync(delay=700){
+  clearTimeout(_syncTimer);
+  _syncTimer=setTimeout(()=>{ runSync(); }, delay);
+}
+function runSync(){
+  clearTimeout(_syncTimer);
+  if(_syncRunning){ _syncAgain=true; return _syncRunning; }
+  _syncRunning=(async()=>{
+    do{ _syncAgain=false; await syncOnce(); } while(_syncAgain);
+  })().finally(()=>{ _syncRunning=null; });
+  return _syncRunning;
+}
+function renderSig(){ return JSON.stringify([S.exps, settingsFromState().cats, S.deds, S.budgetMap, S.incomeMap, S.assets, S.manualPay, S.coins]); }
+async function syncOnce(){
+  const months=new Set(_dirtyMonths); months.add(S.month);
+  _dirtyMonths.clear();
+  const before=renderSig();
+  try{
     showSyncStatus('saving');
-    // 設定保存
-    await gasPost({ action: 'kakeiboSaveSettings', data: settingsFromState() });
-    // 当月データ保存
-    await gasPost({ action: 'kakeiboSaveMonth', ym: S.month, data: monthDataFromState(S.month) });
-    showSyncStatus('saved');
-  } catch(e) {
-    showSyncStatus('error');
-    console.error('cloudSave error:', e);
-  }
-}
-
-// クラウドから読込（設定は更新時刻(updatedAt)が新しい方を優先）
-async function cloudLoad(silent=false) {
-  try {
-    if (!silent) showSyncStatus('loading');
-
-    // 設定の同期（settingsUpdatedAtが新しい方を優先しつつ、古い方にしかない
-    // カテゴリ・月別予算・月別収入・獲得アイテムは消さずに統合する。
-    // ※「支出を1件記録しただけ」でもsettingsUpdatedAtは更新されるため、
-    // 　丸ごと上書きすると別端末の予算設定が消える事故が起きる。それを防ぐためのマージ。
-    const sr = await gasGet({ action: 'kakeiboLoadSettings' });
-    if (sr.status === 'ok' && sr.data) {
-      const cloud = sr.data;
-      const local = settingsFromState();
-      const localUpdatedAt = S.settingsUpdatedAt || 0;
-      const cloudUpdatedAt = cloud.updatedAt || 0;
-      const cloudIsNewer = cloudUpdatedAt > localUpdatedAt;
-      const winner = cloudIsNewer ? cloud : local;
-      const loser  = cloudIsNewer ? local : cloud;
-
-      S.income    = winner.income ?? loser.income ?? S.income;
-      // 月別収入・月別予算：キー（年月）単位で統合し、新しい方の値を優先。古い方にしかない月は保持。
-      S.incomeMap = { ...(loser.incomeMap||{}), ...(winner.incomeMap||{}) };
-      S.budgetMap = mergeBudgetMap(winner.budgetMap, loser.budgetMap);
-      // カテゴリ・固定費：名前／IDで統合し、片方にしかない項目（例：家賃カテゴリ）を消さない
-      S.cats      = mergeByKey(winner.cats, loser.cats, c=>c.name);
-      S.deds      = mergeByKey(winner.deds, loser.deds, d=>d.id);
-      S.assets    = winner.assets ?? loser.assets ?? S.assets;
-      S.coins     = Math.max(winner.coins||0, loser.coins||0);
-      S.records   = Math.max(winner.records||0, loser.records||0);
-      S.gotItems  = { ...(loser.gotItems||{}), ...(winner.gotItems||{}) };
-      S.theme     = winner.theme ?? S.theme;
-      S.settingsUpdatedAt = Math.max(cloudUpdatedAt, localUpdatedAt);
-
-      // 統合結果をクラウドへ書き戻す（次回以降どちらの端末から見ても同じ状態になる）
-      await gasPost({ action: 'kakeiboSaveSettings', data: settingsFromState() });
-
-      // 削除済みID一覧はどちらが新しいかに関わらず両方の記録を統合（削除の取りこぼし防止）
-      const mergedTomb = { ...(cloud.deletedExpIds||{}) };
-      Object.entries(S.deletedExpIds||{}).forEach(([id,t])=>{ mergedTomb[id]=Math.max(mergedTomb[id]||0, t); });
-      S.deletedExpIds = mergedTomb;
+    // ① クラウドの最新を読む
+    const sr=await gasGet({ action:'kakeiboLoadSettings' });
+    if(sr && sr.status==='ok' && sr.data) mergeSettingsFromCloud(sr.data);
+    for(const ym of months){
+      const mr=await gasGet({ action:'kakeiboLoadMonth', ym });
+      if(mr && mr.status==='ok' && mr.data) mergeMonthFromCloud(ym, mr.data);
     }
-
-    // 当月データの同期（ローカル・クラウドをマージし、削除済みIDは復活させない）
-    const mr = await gasGet({ action: 'kakeiboLoadMonth', ym: S.month });
-    if (mr.status === 'ok' && mr.data) {
-      const cloud = mr.data;
-      // ローカルとクラウドをマージして重複除去
-      S.exps = [
-        ...S.exps.filter(e => !e.date.startsWith(S.month)),
-        ...dedupeExps([
-          ...S.exps.filter(e => e.date.startsWith(S.month)),
-          ...(cloud.exps || []),
-        ]).filter(e => !S.deletedExpIds[e.id])
-      ];
-      Object.assign(S.manualPay, cloud.manualPay||{});
-      await gasPost({ action: 'kakeiboSaveMonth', ym: S.month, data: monthDataFromState(S.month) });
-    }
-    persist();
-    if (!silent) { showSyncStatus('loaded'); applyTheme(); setMonthLabel(); buildNav(); renderCurrent(); }
-    else showSyncStatus('synced');
-  } catch(e) {
-    if (!silent) showSyncStatus('error');
-    console.error('cloudLoad error:', e);
-  }
-}
-
-// 月切り替え時：ローカル・クラウドをマージ（削除済みIDは復活させない）
-async function cloudLoadMonth(ym) {
-  try {
-    showSyncStatus('loading');
-    const mr = await gasGet({ action: 'kakeiboLoadMonth', ym });
-    if (mr.status === 'ok' && mr.data) {
-      const cloud = mr.data;
-      // ローカルとクラウドをマージして重複除去
-      const merged = [
-        ...S.exps.filter(e => !e.date.startsWith(ym)),
-        ...dedupeExps([
-          ...S.exps.filter(e => e.date.startsWith(ym)),
-          ...(cloud.exps || []),
-        ]).filter(e => !S.deletedExpIds[e.id])
-      ];
-      S.exps = merged;
-      Object.assign(S.manualPay, cloud.manualPay||{});
-      // マージ結果を先にクラウドへ確定保存してから、ローカルの持ち回り保存を行う
-      // （順序を逆にすると、直後の背景保存と競合して古いデータで上書きされる恐れがあるため）
-      await gasPost({ action: 'kakeiboSaveMonth', ym, data: monthDataFromState(ym) });
-      persist();
+    // ② 削除記録を反映してから端末に保存
+    applyTombs();
+    S._settingsSig=settingsSig();
+    saveLocal();
+    // ③ 統合結果をクラウドへ書き戻す
+    await gasPost({ action:'kakeiboSaveSettings', data: settingsFromState() });
+    for(const ym of months){
+      await gasPost({ action:'kakeiboSaveMonth', ym, data: monthDataFromState(ym) });
     }
     showSyncStatus('synced');
-  } catch(e) {
+    if(renderSig()!==before) refreshAfterSync();
+  }catch(e){
+    months.forEach(m=>_dirtyMonths.add(m));
+    _syncAgain=false;
     showSyncStatus('error');
+    console.error('sync error:', e);
+    clearTimeout(_retryTimer);
+    _retryTimer=setTimeout(()=>requestSync(0), 30000); // 30秒後に自動で再試行
   }
+}
+// 他端末の変更を取り込んだら画面を更新（入力中の画面は崩さない）
+let _pendingRender=false;
+function refreshAfterSync(){
+  if(OV.style.display==='flex' || curPage==='budget'){ _pendingRender=true; return; }
+  _pendingRender=false;
+  applyTheme(); renderCurrent();
+}
+
+// 互換用：既存の呼び出し口
+async function cloudLoad(silent=false){
+  if(!silent) showSyncStatus('loading');
+  await runSync();
+  if(!silent){ applyTheme(); setMonthLabel(); buildNav(); renderCurrent(); showSyncStatus('loaded'); }
+}
+async function cloudLoadMonth(ym){
+  markDirty(ym);
+  await runSync();
 }
 
 // 同期ステータス表示
@@ -538,15 +567,29 @@ let S;
 try{ S=JSON.parse(localStorage.getItem('kakeibo7')||'null')||defaultState(); }
 catch(e){ S=defaultState(); }
 if(!S.deletedExpIds) S.deletedExpIds={};
+if(!S.deletedCatNames) S.deletedCatNames={};
+if(!S.deletedDedIds) S.deletedDedIds={};
+if(!S.manualPayAt) S.manualPayAt={};
 
-function persist(){
-  // 保存時刻を記録（競合防止）
-  const now = Date.now();
-  S.settingsUpdatedAt = now;
-  S['monthUpdatedAt_' + S.month] = now;
+// 設定の中身（支出の記録で変わるコイン等を除く）の指紋。
+// 設定が本当に変わったときだけ更新時刻を進め、支出を記録しただけの端末が
+// 「設定が新しい側」と誤判定されて他端末の設定を上書きするのを防ぐ。
+function settingsSig(){
+  const s=settingsFromState();
+  ['updatedAt','coins','records','gotItems','deletedExpIds','deletedCatNames','deletedDedIds'].forEach(k=>delete s[k]);
+  return JSON.stringify(s);
+}
+function saveLocal(){
   try{ localStorage.setItem('kakeibo7', JSON.stringify(S)); } catch(e) {}
-  // クラウドへも保存
-  if(typeof cloudSave === 'function') cloudSave().catch(()=>{});
+}
+// touchedMonths: 支出を追加・修正・削除した「支出日の年月」（表示中の月と違う場合に必要）
+function persist(touchedMonths){
+  const sig=settingsSig();
+  if(sig!==S._settingsSig){ S._settingsSig=sig; S.settingsUpdatedAt=Date.now(); }
+  saveLocal();
+  markDirty(S.month);
+  (touchedMonths||[]).forEach(markDirty);
+  requestSync();
 }
 
 // ─────────────────────────────────────────────
@@ -586,8 +629,8 @@ function mergeBudgetMap(winnerBM, loserBM){
 // （片方の端末にしかないカテゴリ／固定費が同期で消えるのを防ぐ）
 function mergeByKey(winnerArr, loserArr, keyFn){
   const map=new Map();
-  (loserArr||[]).forEach(item=>map.set(keyFn(item), item));
-  (winnerArr||[]).forEach(item=>map.set(keyFn(item), item)); // 同じキーは新しい方で上書き
+  (winnerArr||[]).forEach(item=>map.set(keyFn(item), item)); // 新しい方の内容・並び順を優先
+  (loserArr||[]).forEach(item=>{ const k=keyFn(item); if(!map.has(k)) map.set(k, item); });
   return Array.from(map.values());
 }
 // 重複除去関数（共通）
@@ -715,6 +758,7 @@ function openModal(html){
 function closeModal(){
   OV.style.display='none';
   MDLBOX.innerHTML='';
+  if(_pendingRender && curPage!=='budget'){ _pendingRender=false; setTimeout(renderCurrent,0); }
 }
 // オーバーレイ背景クリックで閉じる
 OV.addEventListener('click',function(e){
@@ -946,13 +990,10 @@ async function mergeOrphanCategory(fromName,toName){
   const affectedMonths=new Set();
   let count=0;
   S.exps.forEach(e=>{
-    if(e.cat===fromName){ e.cat=toName; affectedMonths.add(e.date.substring(0,7)); count++; }
+    if(e.cat===fromName){ e.cat=toName; e.updatedAt=Date.now(); affectedMonths.add(e.date.substring(0,7)); count++; }
   });
-  persist();
-  // 影響を受けた月ぶんをまとめてクラウドへ確定保存（当月以外の過去分も反映）
-  for(const ym of affectedMonths){
-    try{ await gasPost({ action:'kakeiboSaveMonth', ym, data: monthDataFromState(ym) }); } catch(e){}
-  }
+  // 影響を受けた月ぶんをまとめてクラウドへ反映（当月以外の過去分も）
+  persist([...affectedMonths]);
   toast('「'+fromName+'」の支出 '+count+'件を「'+toName+'」に統合しました');
   renderDashboard();
 }
@@ -1052,7 +1093,7 @@ function doAddExp(andClose){
   if(!date){toast('日付を入力してください'); return;}
 
   // ★ 支出追加・保存（重複チェック）
-  const newExp={id:Date.now()+'_'+Math.random().toString(36).slice(2,8),cat,amt,date,memo,card};
+  const newExp={id:Date.now()+'_'+Math.random().toString(36).slice(2,8),cat,amt,date,memo,card,updatedAt:Date.now()};
   const dupKey=date+'|'+cat+'|'+amt+'|'+card+'|'+(memo||'');
   const isDup=S.exps.some(e=>(e.date+'|'+e.cat+'|'+e.amt+'|'+e.card+'|'+(e.memo||''))===dupKey);
   if(isDup){toast('同じ支出がすでに登録されています');return;}
@@ -1072,7 +1113,7 @@ function doAddExp(andClose){
     }
   });
 
-  persist();
+  persist([date.substring(0,7)]);
 
   // ダッシュボードのみ即反映
   if(curPage==='dashboard') renderDashboard();
@@ -1120,6 +1161,14 @@ function updateBsRemain(pg){
     el.textContent=yen(remain);
     el.style.color=remain<0?'var(--red)':remain===0?'var(--green)':'var(--accent)';
   }
+}
+
+// カテゴリ名を変更（旧名は削除扱いにして、同期で旧名カテゴリが復活しないようにする）
+function renameCat(i,n){
+  if(!n || !S.cats[i] || S.cats[i].name===n) return;
+  S.deletedCatNames[S.cats[i].name]=Date.now();
+  S.cats[i].name=n;
+  S.cats[i].at=Date.now();
 }
 
 let dragIdx=null;
@@ -1182,9 +1231,10 @@ function renderBudget(){
         if(ri===i) return;
         const n=row.querySelector('[data-bn="'+ri+'"]').value.trim();
         const y=parseInt(row.querySelector('[data-by="'+ri+'"]').value)||0;
-        if(n) S.cats[ri].name=n;
+        renameCat(ri,n);
         S.budgetMap[S.month][S.cats[ri].name]=y>0?y:null;
       });
+      S.deletedCatNames[S.cats[i].name]=Date.now();
       S.cats.splice(i,1); renderBudget();
     };
   });
@@ -1203,7 +1253,7 @@ function renderBudget(){
           const ri=+row2.dataset.i;
           const n=row2.querySelector('[data-bn="'+ri+'"]').value.trim();
           const y=parseInt(row2.querySelector('[data-by="'+ri+'"]').value)||0;
-          if(n) S.cats[ri].name=n;
+          renameCat(ri,n);
           S.budgetMap[S.month][S.cats[ri].name]=y>0?y:null;
         });
         const [moved]=S.cats.splice(dragIdx,1);
@@ -1240,11 +1290,11 @@ function renderBudget(){
         const i=+row.dataset.i;
         const n=row.querySelector('[data-bn="'+i+'"]').value.trim();
         const y=parseInt(row.querySelector('[data-by="'+i+'"]').value)||0;
-        if(n) S.cats[i].name=n;
+        renameCat(i,n);
         S.budgetMap[S.month][S.cats[i].name]=y>0?y:null;
       });
       const cols=['#10b981','#6366f1','#f59e0b','#ec4899','#8b5cf6'];
-      S.cats.push({name,e:'📦',pct:0,col:cols[S.cats.length%cols.length],manual:null});
+      S.cats.push({name,e:'📦',pct:0,col:cols[S.cats.length%cols.length],manual:null,at:Date.now()});
       renderBudget();
     };
   };
@@ -1256,7 +1306,7 @@ function renderBudget(){
       const i=+row.dataset.i;
       const n=row.querySelector('[data-bn="'+i+'"]').value.trim();
       const y=parseInt(row.querySelector('[data-by="'+i+'"]').value)||0;
-      if(n) S.cats[i].name=n;
+      renameCat(i,n);
       // 金額は当月のbudgetMapにのみ保存（他の月に影響しない）
       S.budgetMap[S.month][S.cats[i].name]=y>0?y:null;
     });
@@ -1575,6 +1625,8 @@ function renderPaySchedule(container){
           else delete S.manualPay[ym+'_'+k];
         }
       });
+      if(!S.manualPayAt) S.manualPayAt={};
+      S.manualPayAt[ym]=Date.now();
       persist();
       toast('引き落とし情報を保存しました！');
       renderPayments();
@@ -1615,6 +1667,8 @@ function renderDedList(container){
     el.onclick=()=>{
       const i=+el.dataset.deddel;
       if(!confirm('「'+S.deds[i].name+'」を削除しますか？')) return;
+      if(!S.deletedDedIds) S.deletedDedIds={};
+      S.deletedDedIds[S.deds[i].id]=Date.now();
       S.deds.splice(i,1); persist(); renderPayments();
     };
   });
@@ -1772,9 +1826,9 @@ function renderLogList(fc,fk,pg){
     btn.onclick=()=>{
       const i=+btn.dataset.delexp;
       if(!confirm('この支出を削除しますか？')) return;
-      const delId=S.exps[i]&&S.exps[i].id;
-      if(delId){ if(!S.deletedExpIds) S.deletedExpIds={}; S.deletedExpIds[delId]=Date.now(); }
-      S.exps.splice(i,1); persist(); renderLog();
+      const del=S.exps[i]; if(!del) return;
+      if(del.id){ if(!S.deletedExpIds) S.deletedExpIds={}; S.deletedExpIds[del.id]=Date.now(); }
+      S.exps.splice(i,1); persist([del.date.substring(0,7)]); renderLog();
     };
   });
 }
@@ -1820,15 +1874,17 @@ function openEditExpModal(idx){
     const date=document.getElementById('EE_date').value;
     if(amt<=0){toast('金額を入力してください');return;}
     if(!date){toast('日付を入力してください');return;}
+    const oldYM=S.exps[idx].date.substring(0,7);
     S.exps[idx]={
       ...S.exps[idx],
+      updatedAt: Date.now(),
       cat:  document.getElementById('EE_cat').value,
       card: document.getElementById('EE_card').value,
       amt,
       date,
       memo: document.getElementById('EE_memo').value.trim(),
     };
-    persist();
+    persist([oldYM, date.substring(0,7)]);
     closeModal();
     toast('支出を修正しました！');
     renderLog();
@@ -1854,13 +1910,22 @@ renderCurrent();
 // ローカルにデータあり → 即表示してバックグラウンドで静かに同期
 // ローカルにデータなし → クラウドから読込（初回起動時のみ待つ）
 const hasLocalData = S.exps.length > 0 || S.cats.some(c => c.manual !== null);
+if(S._settingsSig===undefined) S._settingsSig=settingsSig();
 if (hasLocalData) {
-  // 即座に表示済み → バックグラウンドで同期（silent=true）
-  setTimeout(() => cloudLoad(true), 3000);
+  // 即座に表示済み → すぐバックグラウンドで同期
+  requestSync(0);
 } else {
   // データなし（初回）→ クラウドから読込
   cloudLoad(false);
 }
+// 画面に戻ってきたとき・定期的にクラウドの最新を取り込む
+// （開きっぱなしの端末が古いデータのまま保存してしまうのを防ぐ）
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') requestSync(0);
+  else if (_dirtyMonths.size) runSync(); // 閉じる前に未送信分を送る
+});
+window.addEventListener('focus', () => requestSync(0));
+setInterval(() => { if (document.visibilityState === 'visible') requestSync(0); }, 120000);
 
 // 手動クラウド読込ボタン（silent=false で必ず再描画）
 document.getElementById('btnCloudLoad').onclick = () => cloudLoad(false);
