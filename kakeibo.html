@@ -1179,7 +1179,7 @@ function renderBudget(){
       <div class="dhdl">☰</div>
       <div style="font-size:22px;cursor:pointer;text-align:center" data-emojitarget="${i}" title="絵文字を変更">${c.e}</div>
       <input type="text" data-bn="${i}" value="${c.name}" class="finp" style="padding:5px 7px;font-size:12px;font-weight:700">
-      <input type="number" data-by="${i}" value="${budget(c)||''}" class="finp" style="padding:5px 7px;text-align:right;font-size:12px;font-weight:700" placeholder="0">
+      <input type="number" data-by="${i}" value="${budget(c)}" class="finp" style="padding:5px 7px;text-align:right;font-size:12px;font-weight:700" placeholder="0">
       <button class="btn bdng bsm" data-delidx="${i}" style="padding:3px 5px">🗑️</button>
     </div>`).join('');
 
@@ -1232,7 +1232,7 @@ function renderBudget(){
         const n=row.querySelector('[data-bn="'+ri+'"]').value.trim();
         const y=parseInt(row.querySelector('[data-by="'+ri+'"]').value)||0;
         renameCat(ri,n);
-        S.budgetMap[S.month][S.cats[ri].name]=y>0?y:null;
+        S.budgetMap[S.month][S.cats[ri].name]=y;  // 0も「0円の予算」として保存（nullにすると収入の◯%に戻ってしまう）
       });
       S.deletedCatNames[S.cats[i].name]=Date.now();
       S.cats.splice(i,1); renderBudget();
@@ -1254,7 +1254,7 @@ function renderBudget(){
           const n=row2.querySelector('[data-bn="'+ri+'"]').value.trim();
           const y=parseInt(row2.querySelector('[data-by="'+ri+'"]').value)||0;
           renameCat(ri,n);
-          S.budgetMap[S.month][S.cats[ri].name]=y>0?y:null;
+          S.budgetMap[S.month][S.cats[ri].name]=y;  // 0も「0円の予算」として保存（nullにすると収入の◯%に戻ってしまう）
         });
         const [moved]=S.cats.splice(dragIdx,1);
         S.cats.splice(to,0,moved);
@@ -1291,7 +1291,7 @@ function renderBudget(){
         const n=row.querySelector('[data-bn="'+i+'"]').value.trim();
         const y=parseInt(row.querySelector('[data-by="'+i+'"]').value)||0;
         renameCat(i,n);
-        S.budgetMap[S.month][S.cats[i].name]=y>0?y:null;
+        S.budgetMap[S.month][S.cats[i].name]=y;  // 0も「0円の予算」として保存（nullにすると収入の◯%に戻ってしまう）
       });
       const cols=['#10b981','#6366f1','#f59e0b','#ec4899','#8b5cf6'];
       S.cats.push({name,e:'📦',pct:0,col:cols[S.cats.length%cols.length],manual:null,at:Date.now()});
@@ -1308,7 +1308,7 @@ function renderBudget(){
       const y=parseInt(row.querySelector('[data-by="'+i+'"]').value)||0;
       renameCat(i,n);
       // 金額は当月のbudgetMapにのみ保存（他の月に影響しない）
-      S.budgetMap[S.month][S.cats[i].name]=y>0?y:null;
+      S.budgetMap[S.month][S.cats[i].name]=y;  // 0も「0円の予算」として保存（nullにすると収入の◯%に戻ってしまう）
     });
     persist();
     toast('予算を保存したよ！🎯');
